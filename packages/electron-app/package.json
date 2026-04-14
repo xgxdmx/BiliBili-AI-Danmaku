@@ -1,0 +1,83 @@
+{
+  "name": "bilibili-danmu-claw-electron-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BiliBili直播弹幕监听与AI自动回复工具",
+  "author": "BiliBiliDanmakuClaw",
+  "productName": "bilibili-danmu-claw",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "pnpm run build && pnpm run build:installer",
+    "pack:mac": "pnpm run build && pnpm run build:installer:mac",
+    "build:installer": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --win nsis && node ../../scripts/finalize-electron-deploy.mjs",
+    "build:installer:mac": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --mac dmg zip && node ../../scripts/finalize-electron-deploy.mjs",
+    "prepare-deploy": "node ../../scripts/prepare-electron-deploy.mjs"
+  },
+  "build": {
+    "appId": "com.bilibili.danmu-claw",
+    "productName": "BiliBili弹幕Claw",
+    "directories": {
+      "output": "dist/build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "portable": {
+      "artifactName": "BiliBili弹幕Claw-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": null,
+      "shortcutName": "bilibili-danmu-claw"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../danmaku-core",
+        "to": "danmaku-core",
+        "filter": ["**/*", "!build/**", "!dist/**", "!*.spec", "!__pycache__/**"]
+      },
+      {
+        "from": "build",
+        "to": "resources",
+        "filter": ["**/*"]
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "electron": "41.2.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.5.0",
+    "vite": "^6.0.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

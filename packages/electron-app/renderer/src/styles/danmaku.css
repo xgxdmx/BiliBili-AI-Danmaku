@@ -1,0 +1,279 @@
+/* DanmakuView.vue scoped styles */
+.page { height: 100vh; display: flex; flex-direction: column; }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.page-title { font-size: 15px; font-weight: 600; }
+
+.header-stats { display: flex; align-items: center; gap: 16px; }
+.stat { font-size: 12px; color: var(--text-muted); }
+.stat.accent { color: var(--accent); font-weight: 500; }
+
+.empty-banner { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); }
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-banner p { font-size: 14px; }
+.empty-sub { font-size: 12px !important; color: var(--text-muted); margin-top: 4px; }
+
+.columns-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 上方：源弹幕 | 匹配弹幕 */
+
+.columns-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 下方：最新弹幕 - 固定高度 */
+.danmaku-bar {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.danmaku-bar .column-header {
+  flex-shrink: 0;
+}
+
+.danmaku-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.danmaku-bar-item {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  padding: 3px 12px;
+  color: var(--text-secondary);
+  user-select: text;
+}
+
+.bar-indicator {
+  font-size: 12px;
+  margin-right: 6px;
+  color: var(--text-muted);
+}
+
+.danmaku-bar-item.sent .bar-indicator {
+  color: var(--accent);
+}
+
+.danmaku-bar-item.sent {
+  background: var(--accent-dim);
+}
+
+.danmaku-bar-item:hover { background: var(--bg-hover); }
+
+.danmaku-bar-item .medal {
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+.bar-username { color: var(--cyan); font-weight: 500; }
+.bar-content { color: var(--text-primary); margin-left: 4px; }
+
+.column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.column:last-child { border-right: none; }
+
+.column-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.column-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.column-count { font-size: 11px; color: var(--text-muted); background: var(--bg-active); padding: 1px 6px; border-radius: 3px; }
+.column-search { width: 120px; padding: 3px 8px; font-size: 11px; margin-left: 8px; }
+.btn-clear { background: none; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; cursor: pointer; padding: 2px 8px; border-radius: 3px; }
+.btn-clear:hover { background: var(--bg-hover); border-color: var(--accent); color: var(--accent); }
+
+.column-scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; }
+
+/* Source danmaku items */
+.d-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 12px;
+  font-size: 13px;
+  transition: background 0.1s;
+  user-select: text;
+}
+
+.d-item:hover { background: var(--bg-hover); }
+.d-item.highlight { background: var(--accent-dim); border-left: 2px solid var(--accent); }
+.d-item.gift { color: var(--warning); }
+
+.medal {
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.guard-badge {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 2px;
+  line-height: 16px;
+  white-space: nowrap;
+  background: #ff9e6422;
+  color: var(--orange);
+  border: 1px solid #ff9e6488;
+}
+
+.spacer {
+  display: inline-block;
+  width: 4px;
+}
+
+.uname {
+  color: var(--cyan);
+  min-width: 0;
+  max-width: none;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 12px;
+}
+
+.uname.admin { color: var(--danger); }
+.uname.vip { color: var(--purple); }
+
+.dmsg {
+  flex: 0 1 auto;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  display: inline;
+}
+.dtime { font-size: 11px; color: var(--text-muted); white-space: nowrap; margin-left: auto; }
+
+/* Matched danmaku items */
+.m-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-left: 2px solid var(--accent);
+  margin: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  user-select: text;
+}
+
+.m-top { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+
+.m-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.m-badge.sc { background: var(--warning); }
+
+.m-badge.m-guard {
+  background: #ff9e6422;
+  color: var(--orange);
+  border: 1px solid #ff9e6488;
+}
+
+.m-rule {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.m-user { font-size: 11px; color: var(--cyan); }
+.m-time { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+.m-content { font-size: 12px; color: var(--text-primary); word-break: break-all; flex: 1; }
+
+.m-groups { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.m-group { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--bg-active); color: var(--warning); }
+
+.empty-inline { text-align: center; padding: 40px; color: var(--text-muted); font-size: 13px; }
+
+.send-form {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.send-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 60px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.send-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(88, 190, 255, 0.1);
+}
+
+.send-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.send-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.btn-send {
+  padding: 6px 18px;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-send:disabled {
+  background: var(--text-muted);
+  cursor: not-allowed;
+}

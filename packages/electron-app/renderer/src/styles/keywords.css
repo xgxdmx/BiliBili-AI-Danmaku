@@ -1,0 +1,112 @@
+/* KeywordsView.vue scoped styles */
+.page { padding: 0; }
+.page-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+.page-title { font-size: 15px; font-weight: 600; }
+.switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #26283a 0%, #1f2030 100%);
+}
+
+.switch-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.switch-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: #323754;
+  border: 1px solid #3d4368;
+  transition: all 0.18s ease;
+}
+
+.switch-track.on {
+  background: linear-gradient(90deg, #5a86f0 0%, #7aa2f7 100%);
+  border-color: #7aa2f7;
+  box-shadow: 0 0 0 2px #7aa2f726;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e8eeff;
+  box-shadow: 0 1px 3px #00000050;
+  transition: transform 0.18s ease;
+}
+
+.switch-track.on .switch-thumb {
+  transform: translateX(18px);
+}
+
+.switch-state {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.switch-state.on {
+  color: var(--success);
+}
+
+.switch-state.off {
+  color: var(--text-muted);
+}
+
+.card { margin: 12px; padding: 14px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; }
+.card-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.card-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+
+.rule-card { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-bottom: 8px; }
+.rule-row { display: flex; align-items: center; gap: 6px; }
+.type-select { width: 80px; padding: 4px 8px; font-size: 12px; }
+.scope-select { width: 100px; padding: 4px 8px; font-size: 12px; }
+.pattern-input { flex: 1; padding: 4px 8px; font-size: 12px; }
+.check-label { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.check-label input { accent-color: var(--accent); }
+.del-btn { background: none; color: var(--danger); font-size: 14px; padding: 2px 6px; border-radius: 3px; }
+.del-btn:hover { background: #f7768e20; }
+
+.btn { padding: 6px 16px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+.btn-accent { background: var(--accent); color: #1a1b26; }
+.btn-accent:hover { background: #5b8cf7; }
+.btn-ghost { background: none; color: var(--text-muted); border: 1px dashed var(--border); }
+.btn-ghost:hover { border-color: var(--text-muted); color: var(--text-secondary); }
+.btn-row { display: flex; align-items: center; gap: 8px; }
+.msg-inline { font-size: 12px; }
+.msg-success { color: var(--success); }
+.msg-error { color: var(--danger); }
+
+.saved-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.saved-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; }
+.type-badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; }
+.type-badge.keyword { background: var(--accent-dim); color: var(--accent); }
+.type-badge.regex { background: #bb9af722; color: var(--purple); }
+.scope-badge { margin-left: 0; }
+.scope-badge.both { background: #9ece6a22; color: #9ece6a; }
+.scope-badge.quickReply { background: #e0af6822; color: #e0af68; }
+.scope-badge.ai { background: #7aa2f722; color: #7aa2f7; }
+.case-btn { display: flex; align-items: center; justify-content: center; background: none; border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: 600; min-width: 32px; }
+.case-btn:hover { border-color: var(--accent); color: var(--accent); }
+.case-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.pattern-text { flex: 1; font-size: 12px; font-family: monospace; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; border: none; cursor: pointer; }
+.status-dot.enabled { background: var(--success); }
+.status-dot.disabled { background: var(--text-muted); }

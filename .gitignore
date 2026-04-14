@@ -1,0 +1,69 @@
+# ─── Python ──────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# ─── Node.js ─────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ─── 构建产物 ─────────────────────────────────────────────
+# TypeScript / Vite / electron-vite 输出
+**/dist/
+**/out/
+*.tsbuildinfo
+
+# PyInstaller 输出
+build/
+*.toc
+*.zip
+*.pkg
+*.pyz
+
+# electron-app 构建目录
+packages/electron-app/build/
+
+# danmaku-core 构建目录
+packages/danmaku-core/build/
+
+# PyInstaller EXE（根目录 dist/ 和子目录）
+packages/danmaku-core/receiver.exe
+packages/danmaku-core/run.exe
+packages/danmaku-core/sender.exe
+
+# scripts
+/scripts
+
+# Electron / electron-builder
+release/
+*.blockmap
+*.tgz
+
+# Electron 打包中间产物
+packages/electron-app/.deploy/
+
+# ─── 敏感配置（包含凭据，绝不可提交）─────────────────────────
+config*.json
+config*.json.*
+
+# ─── 环境变量 ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── IDE ──────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini

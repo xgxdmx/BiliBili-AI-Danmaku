@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>BiliBili弹幕Claw 用户手册</title>
+<style>
+  @page {
+    size: A4;
+    margin: 25mm 20mm 25mm 20mm;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #222;
+    background: #fff;
+    padding: 0;
+  }
+  .cover {
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 90vh;
+    text-align: center;
+  }
+  .cover h1 {
+    font-size: 36px;
+    color: #1a1b26;
+    margin-bottom: 12px;
+    letter-spacing: 2px;
+  }
+  .cover .subtitle {
+    font-size: 18px;
+    color: #565f89;
+    margin-bottom: 40px;
+  }
+  .cover .version {
+    font-size: 14px;
+    color: #7aa2f7;
+    border: 1px solid #7aa2f7;
+    padding: 4px 16px;
+    border-radius: 20px;
+  }
+  .toc {
+    page-break-after: always;
+    padding-top: 20px;
+  }
+  .toc h2 {
+    font-size: 22px;
+    color: #1a1b26;
+    border-bottom: 2px solid #7aa2f7;
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+  }
+  .toc ul {
+    list-style: none;
+    padding: 0;
+  }
+  .toc li {
+    padding: 6px 0;
+    border-bottom: 1px dotted #ddd;
+  }
+  .toc li a {
+    color: #3d59a1;
+    text-decoration: none;
+  }
+  .toc li a:hover {
+    text-decoration: underline;
+  }
+  .toc .toc-l2 {
+    padding-left: 24px;
+    font-size: 13px;
+  }
+  h2 {
+    font-size: 22px;
+    color: #1a1b26;
+    border-bottom: 2px solid #7aa2f7;
+    padding-bottom: 6px;
+    margin: 28px 0 14px 0;
+  }
+  h3 {
+    font-size: 17px;
+    color: #3d59a1;
+    margin: 18px 0 10px 0;
+    padding-left: 10px;
+    border-left: 4px solid #7aa2f7;
+  }
+  h4 {
+    font-size: 15px;
+    color: #565f89;
+    margin: 12px 0 6px 0;
+  }
+  p {
+    margin: 8px 0;
+  }
+  ul, ol {
+    margin: 8px 0 8px 24px;
+  }
+  li {
+    margin: 4px 0;
+  }
+  .note {
+    background: #e0af6822;
+    border-left: 4px solid #e0af68;
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+  }
+  .note-title {
+    font-weight: 700;
+    color: #e0af68;
+    margin-bottom: 4px;
+  }
+  .tip {
+    background: #9ece6a22;
+    border-left: 4px solid #9ece6a;
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+  }
+  .tip-title {
+    font-weight: 700;
+    color: #9ece6a;
+    margin-bottom: 4px;
+  }
+  .warn {
+    background: #f7768e22;
+    border-left: 4px solid #f7768e;
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+  }
+  .warn-title {
+    font-weight: 700;
+    color: #f7768e;
+    margin-bottom: 4px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px 12px;
+    text-align: left;
+  }
+  th {
+    background: #1a1b26;
+    color: #fff;
+    font-weight: 600;
+  }
+  td {
+    background: #fafafa;
+  }
+  code {
+    background: #f0f0f0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 13px;
+    color: #c53b53;
+  }
+  .page-section {
+    page-break-before: always;
+  }
+  .flow-diagram {
+    background: #1a1b26;
+    color: #a9b1d6;
+    padding: 16px 20px;
+    border-radius: 8px;
+    font-family: "Cascadia Code", "Fira Code", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .badge-both { background: #9ece6a33; color: #9ece6a; }
+  .badge-qr { background: #e0af6833; color: #e0af68; }
+  .badge-ai { background: #7aa2f733; color: #7aa2f7; }
+  .badge-keyword { background: #bb9af733; color: #bb9af7; }
+  .badge-regex { background: #f7768e33; color: #f7768e; }
+  .footer {
+    margin-top: 40px;
+    padding-top: 12px;
+    border-top: 1px solid #ddd;
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== COVER ==================== -->
+<div class="cover">
+  <h1>BiliBili弹幕Claw</h1>
+  <div class="subtitle">B站直播弹幕监听 & AI自动回复 — 用户手册</div>
+  <div class="version">v0.1.0</div>
+</div>
+
+<!-- ==================== TOC ==================== -->
+<div class="toc">
+  <h2>目录</h2>
+  <ul>
+    <li><a href="#intro">1. 产品简介</a></li>
+    <li><a href="#architecture">2. 系统架构与数据流</a></li>
+    <li>
+      <a href="#quickstart">3. 快速开始</a>
+      <ul>
+        <li class="toc-l2"><a href="#install">3.1 安装</a></li>
+        <li class="toc-l2"><a href="#first-run">3.2 首次运行</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#room">4. 直播间页面</a>
+      <ul>
+        <li class="toc-l2"><a href="#room-connect">4.1 连接设置</a></li>
+        <li class="toc-l2"><a href="#room-cookie">4.2 B站凭证</a></li>
+        <li class="toc-l2"><a href="#room-medal">4.3 粉丝牌等级过滤</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#keywords">5. 关键词页面</a>
+      <ul>
+        <li class="toc-l2"><a href="#kw-rules">5.1 关键词规则</a></li>
+        <li class="toc-l2"><a href="#kw-scope">5.2 匹配范围</a></li>
+        <li class="toc-l2"><a href="#kw-quickreply">5.3 固定回复规则</a></li>
+        <li class="toc-l2"><a href="#kw-medal">5.4 粉丝牌等级门槛</a></li>
+        <li class="toc-l2"><a href="#kw-ignore">5.5 忽略用户名</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#model">6. 大模型配置页面</a>
+      <ul>
+        <li class="toc-l2"><a href="#model-provider">6.1 供应商与模型</a></li>
+        <li class="toc-l2"><a href="#model-prompt">6.2 提示词</a></li>
+        <li class="toc-l2"><a href="#model-skip">6.3 跳过标记</a></li>
+        <li class="toc-l2"><a href="#model-preview">6.4 AI返回预览</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#config">7. 配置导入/导出</a>
+      <ul>
+        <li class="toc-l2"><a href="#config-export">7.1 导出配置</a></li>
+        <li class="toc-l2"><a href="#config-import">7.2 导入配置</a></li>
+      </ul>
+    </li>
+    <li><a href="#faq">8. 常见问题</a></li>
+  </ul>
+</div>
+
+<!-- ==================== 1. 产品简介 ==================== -->
+<div class="page-section" id="intro">
+  <h2>1. 产品简介</h2>
+  <p>
+    <b>BiliBili弹幕Claw</b> 是一款 B站直播间弹幕监听 + AI自动回复 桌面工具。
+    它能实时接收直播间弹幕，按规则过滤后交给大语言模型（LLM）生成回复，并以弹幕形式自动发送到直播间。
+  </p>
+
+  <h3>核心功能</h3>
+  <ul>
+    <li><b>实时弹幕监听</b> — 通过 B站 WebSocket 协议接收弹幕、礼物、醒目留言</li>
+    <li><b>关键词/正则匹配</b> — 灵活配置过滤规则，支持匹配范围选择</li>
+    <li><b>固定回复</b> — 对匹配弹幕直接发送预设文本，不走 AI，响应速度更快</li>
+    <li><b>AI 自动回复</b> — 接入 OpenAI 兼容接口，上下文感知地生成弹幕回复</li>
+    <li><b>粉丝牌等级过滤</b> — 设置最低粉丝牌等级，过滤低等级弹幕</li>
+    <li><b>礼物 & 醒目留言识别</b> — 自动将礼物/SC 事件送入 AI，实现感谢互动</li>
+    <li><b>防自回环</b> — 回声检测机制避免机器人与自身弹幕死循环</li>
+    <li><b>配置加密存储 & 导出/导入</b> — Cookie 等敏感信息加密保存，支持一键迁移</li>
+  </ul>
+</div>
+
+<!-- ==================== 2. 架构 ==================== -->
+<div class="page-section" id="architecture">
+  <h2>2. 系统架构与数据流</h2>
+  <div class="flow-diagram">
+  B站直播间
+      │ WebSocket
+      ▼
+  Python 弹幕核心 (blivedm)
+      │ JSON-RPC over stdio
+      ▼
+  Electron 主进程
+      ├── DanmakuService ── 关键词过滤 ── 作用域路由
+      │       │
+      │       ├──► 固定回复引擎 (QuickReplyEngine)
+      │       │        匹配 → 直接发弹幕
+      │       │
+      │       └──► AI 回复引擎 (AIRelayManager)
+      │                排队 → 调用 LLM → 解析回复 → 发弹幕
+      │                                    │
+      │                                命中跳过标记 → 不发送
+      │
+      └──► Renderer 进程 (Vue 3 GUI)
+              └── 实时显示源弹幕 / 匹配弹幕 / AI 状态
+  </div>
+
+  <h3>弹幕路由逻辑</h3>
+  <p>当一条弹幕到达时，系统按以下流程处理：</p>
+  <ol>
+    <li>粉丝牌等级过滤：低于门槛的弹幕不会进入匹配/AI，但源弹幕仍正常显示。</li>
+    <li>关键词匹配：弹幕与关键词/正则规则进行匹配，并得到 <code>scope</code>（匹配范围）。</li>
+    <li>作用域路由：
+      <ul>
+        <li><span class="badge badge-both">全部匹配</span> — 匹配的弹幕同时进入固定回复和 AI。</li>
+        <li><span class="badge badge-qr">仅固定回复</span> — 匹配的弹幕只进固定回复；未命中的弹幕直接进 AI（绕过过滤）。</li>
+        <li><span class="badge badge-ai">仅AI回复</span> — 匹配的弹幕只进 AI；未命中的弹幕直接进固定回复（绕过过滤）。</li>
+      </ul>
+    </li>
+    <li>固定回复优先：如果命中固定回复规则，直接发送，不再进入 AI 队列。</li>
+    <li>AI 回复：进入队列，按节奏调用大模型，解析回复文本后发送弹幕。</li>
+  </ol>
+</div>
+
+<!-- ==================== 3. 快速开始 ==================== -->
+<div class="page-section" id="quickstart">
+  <h2>3. 快速开始</h2>
+
+  <h3 id="install">3.1 安装</h3>
+  <ol>
+    <li>双击 <code>BiliBili弹幕Claw Setup 0.1.0.exe</code> 运行安装向导。</li>
+    <li>选择安装目录，完成安装。</li>
+    <li>启动 <code>BiliBili弹幕Claw</code>。</li>
+  </ol>
+  <div class="note">
+    <div class="note-title">注意</div>
+    首次启动可能被 Windows Defender 拦截，请选择"仍要运行"。Python 弹幕核心已打包为独立可执行文件，无需单独安装 Python。
+  </div>
+
+  <h3 id="first-run">3.2 首次运行</h3>
+  <ol>
+    <li><b>获取 B站凭证</b> — 在「直播间」页点击"弹出B站登录页"，扫码登录后自动获取 Cookie；或手动从浏览器开发者工具中复制 <code>SESSDATA</code>、<code>bili_jct</code>、<code>buvid3</code>。</li>
+    <li><b>配置关键词</b> — 在「关键词」页添加你想关注的弹幕关键词或正则。</li>
+    <li><b>配置大模型</b> — 在「大模型配置」页选择供应商和模型，填入 API Key，编辑提示词。</li>
+    <li><b>开始监听</b> — 回到「直播间」页输入房间号，点击"开始监听"。</li>
+  </ol>
+</div>
+
+<!-- ==================== 4. 直播间 ==================== -->
+<div class="page-section" id="room">
+  <h2>4. 直播间页面</h2>
+
+  <h3 id="room-connect">4.1 连接设置</h3>
+  <table>
+    <tr><th>配置项</th><th>说明</th></tr>
+    <tr><td>房间号</td><td>B站直播间短号或真实房间号</td></tr>
+    <tr><td>开始监听</td><td>连接直播间 WebSocket，开始接收弹幕</td></tr>
+    <tr><td>停止监听</td><td>断开连接，可选发送告别弹幕</td></tr>
+    <tr><td>断开前发送告别弹幕</td><td>勾选后，停止监听前自动发送告别文案</td></tr>
+    <tr><td>告别文案</td><td>停止监听时发送的弹幕内容，如"先下播啦，感谢大家～"</td></tr>
+  </table>
+
+  <h3 id="room-cookie">4.2 B站凭证</h3>
+  <p>程序需要 B站 Cookie 中的三个字段来连接弹幕服务器和发送弹幕：</p>
+  <table>
+    <tr><th>字段</th><th>必填</th><th>说明</th></tr>
+    <tr><td><code>SESSDATA</code></td><td>是</td><td>登录凭证，用于身份验证</td></tr>
+    <tr><td><code>bili_jct</code></td><td>是</td><td>CSRF Token，用于发送弹幕等写操作</td></tr>
+    <tr><td><code>buvid3</code></td><td>可选</td><td>设备标识，部分接口需要</td></tr>
+  </table>
+
+  <div class="tip">
+    <div class="tip-title">推荐方式</div>
+    点击"弹出B站登录页"，在弹出的浏览器窗口中扫码或登录，程序会自动抓取并保存 Cookie。无需手动复制粘贴。
+  </div>
+
+  <h3 id="room-medal">4.3 粉丝牌等级过滤</h3>
+  <p>在直播间页面可设置「最低粉丝牌等级」：</p>
+  <ul>
+    <li>设为 <code>0</code> 表示不过滤。</li>
+    <li>设为 <code>N</code> 表示只让粉丝牌等级 ≥ N 的弹幕进入关键词匹配和 AI 自动回复。</li>
+    <li><b>源弹幕不受影响</b>，仍会正常显示在监控列表中。</li>
+  </ul>
+</div>
+
+<!-- ==================== 5. 关键词 ==================== -->
+<div class="page-section" id="keywords">
+  <h2>5. 关键词页面</h2>
+
+  <h3 id="kw-rules">5.1 关键词规则</h3>
+  <p>关键词规则决定哪些弹幕被"捕获"进入后续处理。每条规则包含：</p>
+  <table>
+    <tr><th>属性</th><th>说明</th></tr>
+    <tr><td>类型</td><td><span class="badge badge-keyword">关键词</span> 子串包含匹配，或 <span class="badge badge-regex">正则</span> JavaScript 正则表达式匹配</td></tr>
+    <tr><td>模式</td><td>具体匹配的文本或正则表达式</td></tr>
+    <tr><td>区分大小写</td><td>仅关键词类型有效；正则通过 flags 自行控制</td></tr>
+    <tr><td>匹配范围</td><td>见 5.2 节</td></tr>
+    <tr><td>启用</td><td>可暂停某条规则而不删除</td></tr>
+  </table>
+
+  <h3 id="kw-scope">5.2 匹配范围</h3>
+  <p>每条关键词规则可以选择三种作用域：</p>
+  <table>
+    <tr><th>范围</th><th>标签</th><th>匹配弹幕处理</th><th>未匹配弹幕处理</th></tr>
+    <tr>
+      <td>全部匹配</td>
+      <td><span class="badge badge-both">ALL</span></td>
+      <td>同时进入固定回复和 AI</td>
+      <td>不进入任何处理</td>
+    </tr>
+    <tr>
+      <td>仅固定回复</td>
+      <td><span class="badge badge-qr">固定</span></td>
+      <td>只进固定回复，不进 AI</td>
+      <td>直接进 AI（绕过过滤）</td>
+    </tr>
+    <tr>
+      <td>仅AI回复</td>
+      <td><span class="badge badge-ai">AI</span></td>
+      <td>只进 AI，不进固定回复</td>
+      <td>直接进固定回复（绕过过滤）</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <div class="note-title">理解作用域</div>
+    <p>「仅固定回复」意味着关键词只影响固定回复的过滤，AI 不受这条规则限制，会直接读源弹幕。这适合你想让 AI 对所有弹幕都能回复，但只对特定关键词触发的弹幕做固定回复的场景。</p>
+    <p>「仅AI回复」则相反：关键词只控制 AI 的过滤，固定回复不受这条规则限制。</p>
+  </div>
+
+  <h3 id="kw-quickreply">5.3 固定回复规则</h3>
+  <p>固定回复（Quick Reply）是独立于 AI 的即时回复机制，<b>优先级高于 AI</b>。当弹幕命中固定回复规则时，直接发送预设文本，不再进入 AI 队列。</p>
+
+  <h4>规则字段</h4>
+  <table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td>包含词</td><td>弹幕包含其中任一词语即触发（逗号或换行分隔）</td></tr>
+    <tr><td>排除词</td><td>弹幕包含其中任一词语则<b>不</b>触发</td></tr>
+    <tr><td>正则</td><td>填写后优先使用正则匹配，可使用捕获组</td></tr>
+    <tr><td>回复内容</td><td>命中后发送的弹幕文本</td></tr>
+    <tr><td>冷却（秒）</td><td>同一规则两次触发之间的最小间隔，0 表示无冷却</td></tr>
+    <tr><td>区分大小写</td><td>是否对包含词/正则做大小写敏感匹配</td></tr>
+    <tr><td>启用</td><td>可暂停规则而不删除</td></tr>
+  </table>
+
+  <div class="tip">
+    <div class="tip-title">示例</div>
+    <p>包含词：<code>什么游戏, 啥游戏</code>，排除词：<code>货物</code>，回复内容：<code>今晚在玩原神！</code>，冷却：<code>30</code> 秒。那么弹幕"什么游戏啊"会触发回复，但"什么游戏货物便宜"不会触发（因为包含"货物"）。30 秒内不会重复触发。
+    </p>
+  </div>
+
+  <div class="note">
+    <div class="note-title">固定回复与关键词范围</div>
+    固定回复的弹幕是否需要先通过关键词过滤，取决于关键词规则的匹配范围设置。如果所有关键词范围都是「仅AI回复」，那么固定回复会直接处理所有源弹幕，不受关键词限制。
+  </div>
+
+  <h3 id="kw-medal">5.4 粉丝牌等级门槛</h3>
+  <p>在关键词页面也可以设置粉丝牌等级门槛（与直播间页面同步）。设置后，粉丝牌等级低于门槛的弹幕不会进入关键词匹配和 AI 自动回复。</p>
+
+  <h3 id="kw-ignore">5.5 忽略用户名</h3>
+  <p>在「忽略用户名」区域，填写不想让 AI 回复的用户名（每行一个或逗号分隔）。这些用户发送的弹幕仍会显示在源弹幕列表中，但不会进入 AI 回复队列，避免机器人自回环。</p>
+</div>
+
+<!-- ==================== 6. 大模型配置 ==================== -->
+<div class="page-section" id="model">
+  <h2>6. 大模型配置页面</h2>
+
+  <h3 id="model-provider">6.1 供应商与模型</h3>
+  <p>目前支持 <b>OpenCode</b> 统一 API 接入，可选用 GPT 系列、Claude 系列、Gemini 系列、MiniMax、GLM、Kimi 等模型。</p>
+
+  <table>
+    <tr><th>配置项</th><th>说明</th></tr>
+    <tr><td>供应商</td><td>选择 API 供应商（当前仅 OpenCode）</td></tr>
+    <tr><td>模型</td><td>从下拉列表选择模型，会自动填充对应的 Endpoint</td></tr>
+    <tr><td>API Key</td><td>从供应商控制台获取的密钥</td></tr>
+    <tr><td>Endpoint</td><td>根据模型自动选择，一般无需手动修改</td></tr>
+    <tr><td>发送间隔(ms)</td><td>两条弹幕之间的最小发送间隔，默认 1800ms，最低 500ms</td></tr>
+    <tr><td>队列上限</td><td>待发送弹幕缓冲队列最大长度，默认 100，超限后仍继续排队</td></tr>
+  </table>
+
+  <div class="note">
+    <div class="note-title">注意</div>
+    「保存供应商配置」只保存配置，不会连接模型。配置保存后需在下方「提示词配置」区域点击"开始连接"才会建立 AI 会话。
+  </div>
+
+  <h3 id="model-prompt">6.2 提示词</h3>
+  <p>系统提示词（System Prompt）定义了 AI 的角色和行为。编辑后会<b>自动保存</b>到配置文件。</p>
+  <p>推荐在提示词中约定输出格式：</p>
+  <div class="tip">
+    <div class="tip-title">提示词约定</div>
+    <p>告诉模型：需要回复时输出弹幕文本；不需要回复时仅输出 <code>NO_REPLY</code>。这样系统会自动跳过不需要回复的消息，避免刷屏。</p>
+    <p>默认提示词为：「你现在是一个直播间助理，你会收到粉丝牌+用户名+弹幕内容，请逐条回复，单条回复不超过40字。」</p>
+  </div>
+
+  <h3 id="model-skip">6.3 跳过标记</h3>
+  <p>在「无需发送标记」区域可配置跳过标记，每行一个。当模型输出命中这些标记时（完全匹配或前缀匹配），本条消息将<b>跳过发送</b>。</p>
+  <p>默认跳过标记：</p>
+  <ul>
+    <li><code>NO_REPLY</code></li>
+    <li><code>无需回复</code></li>
+    <li><code>不需要回复</code></li>
+    <li><code>不用回复</code></li>
+    <li><code>不回复</code></li>
+    <li><code>忽略</code></li>
+    <li><code>skip</code></li>
+    <li><code>pass</code></li>
+  </ul>
+
+  <div class="note">
+    <div class="note-title">匹配规则</div>
+    跳过判断为大小写不敏感的前缀匹配，支持 <code>NO_REPLY</code>、<code>NO_REPLY: 原因</code>、<code>[NO_REPLY]</code>、<code>【无需回复】</code> 等格式。
+  </div>
+
+  <h3 id="model-preview">6.4 AI返回预览</h3>
+  <p>连接 AI 后，页面底部会实时显示最近 50 条 AI 决策记录，包括：</p>
+  <table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td>入参</td><td>发送给模型的输入文本（包含粉丝牌、用户名、弹幕）</td></tr>
+    <tr><td>输出</td><td>模型返回的文本（截断到40字）</td></tr>
+    <tr><td>状态</td><td>待发送 / 已发送 / 已跳过 / 错误 / 已清空</td></tr>
+    <tr><td>原因</td><td>跳过原因或发送详情</td></tr>
+  </table>
+  <p>可点「复制」查看单条详情，或点「复制全部预览」导出所有记录。</p>
+</div>
+
+<!-- ==================== 7. 配置导入导出 ==================== -->
+<div class="page-section" id="config">
+  <h2>7. 配置导入/导出</h2>
+  <p>所有配置（房间号、Cookie、关键词、固定回复、AI 模型设置等）均支持导出和导入，方便在不同电脑间迁移。</p>
+
+  <h3 id="config-export">7.1 导出配置</h3>
+  <p>在「设置」页面点击「导出配置」，选择保存路径，程序会将当前<b>所有配置</b>导出为明文 JSON 文件，包括：</p>
+  <ul>
+    <li>房间配置（房间号、最低粉丝牌等级、断开消息等）</li>
+    <li>B站凭证（SESSDATA、bili_jct、buvid3）</li>
+    <li>关键词规则</li>
+    <li><b>固定回复规则</b></li>
+    <li>AI 模型配置（供应商、API Key、提示词、跳过标记等）</li>
+  </ul>
+
+  <div class="warn">
+    <div class="warn-title">安全提醒</div>
+    导出的 JSON 文件包含 B站 Cookie 和 API Key 等敏感信息，请妥善保管，不要公开分享。
+  </div>
+
+  <h3 id="config-import">7.2 导入配置</h3>
+  <p>在「设置」页面点击「导入配置」，选择之前导出的 JSON 文件。程序会自动读取并覆盖当前配置。</p>
+  <p>导入后，以下内容会立即生效：</p>
+  <ul>
+    <li>关键词规则 → 更新到弹幕服务</li>
+    <li>固定回复规则 → 更新到固定回复引擎</li>
+    <li>粉丝牌等级门槛 → 更新到弹幕服务</li>
+  </ul>
+  <div class="note">
+    <div class="note-title">注意</div>
+    AI 模型连接和直播间连接需要手动重新连接。导入配置不会自动开始监听或连接 AI。
+  </div>
+
+  <h4>配置文件格式示例</h4>
+  <pre style="background:#1a1b26; color:#a9b1d6; padding:12px; border-radius:8px; font-size:12px; overflow-x:auto;">
+{
+  "__meta": {
+    "machineId": "...",
+    "exportedAt": "2026-04-13T12:00:00.000Z",
+    "appName": "danmuClaw",
+    "format": "plain-v1"
+  },
+  "room": {
+    "roomId": 21452505,
+    "enabled": true,
+    "minMedalLevel": 0,
+    "sendOnDisconnect": true,
+    "disconnectMessage": "先下播啦，感谢大家陪伴～"
+  },
+  "credentials": {
+    "sessdata": "...",
+    "biliJct": "...",
+    "buvid3": "..."
+  },
+  "keywords": [
+    {
+      "id": "xxx",
+      "pattern": "你好",
+      "type": "keyword",
+      "enabled": true,
+      "caseSensitive": false,
+      "scope": "both"
+    }
+  ],
+  "quickReplies": [
+    {
+      "id": "yyy",
+      "enabled": true,
+      "contains": ["什么游戏", "啥游戏"],
+      "notContains": ["货物"],
+      "regex": "",
+      "reply": "在玩原神！",
+      "caseSensitive": false,
+      "cooldownMs": 30000
+    }
+  ],
+  "aiModel": {
+    "provider": "opencode",
+    "apiKey": "...",
+    "modelId": "minimax-m2.5-free",
+    "endpoint": "https://opencode.ai/zen/v1/chat/completions",
+    "prompt": "你现在是一个直播间助理...",
+    "sendIntervalMs": 1800,
+    "maxPending": 100,
+    "ignoreUsernames": [],
+    "skipReplies": ["NO_REPLY", "无需回复"]
+  }
+}</pre>
+</div>
+
+<!-- ==================== 8. FAQ ==================== -->
+<div class="page-section" id="faq">
+  <h2>8. 常见问题</h2>
+
+  <h3>Q: 连接直播间后没有弹幕？</h3>
+  <p>A: 请检查：</p>
+  <ul>
+    <li>房间号是否正确</li>
+    <li>SESSDATA 和 bili_jct 是否有效（过期需重新获取）</li>
+    <li>直播是否正在进行</li>
+    <li>查看控制台（如果可打开 DevTools）是否有错误日志</li>
+  </ul>
+
+  <h3>Q: AI 不回复？</h3>
+  <p>A: 请检查：</p>
+  <ul>
+    <li>是否已点击「大模型配置」页的"开始连接"</li>
+    <li>API Key 是否正确</li>
+    <li>模型 Endpoint 是否可访问</li>
+    <li>弹幕是否命中了关键词/粉丝牌过滤</li>
+    <li>查看「AI返回预览」是否有"已跳过"记录（可能命中了跳过标记）</li>
+  </ul>
+
+  <h3>Q: 弹幕发送失败？</h3>
+  <p>A: 可能原因：</p>
+  <ul>
+    <li>bili_jct 过期或错误</li>
+    <li>发送间隔太短（B站有频率限制，建议不低于1800ms）</li>
+    <li>弹幕内容超长（B站限制约20-30字，本程序截断到40字）</li>
+  </ul>
+
+  <h3>Q: 如何避免 AI 回复自己？</h3>
+  <p>A: 在「关键词」页面底部「忽略用户名」中填入你直播间的昵称或机器人账号，这些用户发送的弹幕不会进入 AI 回复队列。</p>
+
+  <h3>Q: 固定回复和 AI 回复哪个优先？</h3>
+  <p>A: 固定回复始终优先于 AI。如果弹幕同时命中了固定回复规则和关键词规则，只会发送固定回复，不会进入 AI 队列。</p>
+
+  <h3>Q: 礼物/醒目留言能触发 AI 回复吗？</h3>
+  <p>A: 可以。礼物和醒目留言会自动作为特殊事件送入 AI 队列，格式为"🎁 用户名 送出 礼物名 x数量"。AI 会根据提示词决定是否回复感谢。</p>
+
+  <h3>Q: 导入配置后固定回复规则没有加载？</h3>
+  <p>A: v0.1.0+ 已修复此问题，导入配置时固定回复规则（<code>quickReplies</code>）会一并加载。如果使用较早版本导出的配置，可能需要手动添加固定回复规则。</p>
+
+  <div class="footer">
+    BiliBili弹幕Claw v0.1.0 — 用户手册
+  </div>
+</div>
+
+</body>
+</html>

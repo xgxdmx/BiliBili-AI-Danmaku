@@ -1,0 +1,38 @@
+{
+  "name": "bilibili-danmaku-claw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bilibili live danmaku listener with AI integration",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "scripts": {
+    "dev": "pnpm --filter @bilibili-danmaku-claw/electron-app dev",
+    "build": "pnpm --filter @bilibili-danmaku-claw/shared build && pnpm --filter @bilibili-danmaku-claw/electron-app build",
+    "build:electron": "pnpm --filter @bilibili-danmaku-claw/shared build && pnpm --filter @bilibili-danmaku-claw/electron-app build",
+    "typecheck": "pnpm -r --parallel run typecheck",
+    "pack": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1",
+    "pack:python": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipElectron",
+    "pack:electron": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipPython",
+    "pack:clean": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Clean"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "sharp",
+      "@matrix-org/matrix-sdk-crypto-nodejs",
+      "koffi",
+      "protobufjs"
+    ]
+  },
+  "devDependencies": {
+    "electron": "41.2.0"
+  }
+}
