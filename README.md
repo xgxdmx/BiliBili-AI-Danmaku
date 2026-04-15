@@ -101,10 +101,10 @@ packages/
     │           ├── DanmakuView.vue     # 💬 弹幕监控
     │           ├── RoomView.vue        # 📺 直播间
     │           ├── KeywordsView.vue    # 🎯 关键词
-│           ├── ModelSettingsView.vue    # 🤖 AI 配置
-│           ├── MatchedView.vue            # ✅ 命中记录
-│           ├── SettingsView.vue           # ⚙️ 设置
-│           └── DevView.vue                # 🔧 开发
+    │           ├── ModelSettingsView.vue    # 🤖 AI 配置
+    │           ├── MatchedView.vue            # ✅ 命中记录
+    │           ├── SettingsView.vue           # ⚙️ 设置
+    │           └── DevView.vue                # 🔧 开发
     └── resources/
         └── icon.ico                    # 🖼️ 应用图标
 ```
@@ -115,9 +115,9 @@ packages/
 
 | 依赖 | 最低版本 |
 |------|---------|
-| [Node.js](https://nodejs.org/) | ≥ 18 |
-| [Python](https://www.python.org/) | ≥ 3.8 |
-| [pnpm](https://pnpm.io/) | ≥ 8 |
+| [Node.js](https://nodejs.org/) | ≥ 24 |
+| [Python](https://www.python.org/) | = 3.13 |
+| [pnpm](https://pnpm.io/) | ≥ 10 |
 
 ### 📥 安装
 
