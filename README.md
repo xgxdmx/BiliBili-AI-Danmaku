@@ -57,38 +57,56 @@
 ```
 packages/
 ├── shared/                             # 📦 共享类型定义 (TypeScript)
-│   └── src/
-│       ├── index.ts                    # 📤 统一导出
-│       └── types.ts                    # 📋 类型定义
+│   ├── src/
+│   │   ├── index.ts                    # 📤 统一导出
+│   │   └── types.ts                    # 📋 类型定义
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── tsconfig.build.json
 │
 ├── danmaku-core/                       # 🐍 Python 弹幕核心
-│   ├── receiver.py                     # 📥 弹幕接收器
-│   ├── sender.py                       # 📤 弹幕发送器
-│   ├── run.py                          # 🚪 入口
-│   └── requirements.txt                # 📦 依赖
+│   ├── receiver.py                    # 📥 弹幕接收器
+│   ├── receiver.spec                  # 📦 PyInstaller 配置
+│   ├── sender.py                      # 📤 弹幕发送器
+│   ├── sender.spec                    # 📦 PyInstaller 配置
+│   ├── run.py                         # 🚪 入口
+│   └── requirements.txt               # 📦 依赖
 │
-└── electron-app/                       # ⚡ Electron 桌面客户端
+└── electron-app/                      # ⚡ Electron 桌面客户端
+    ├── electron.vite.config.ts        # ⚙️ Vite 配置
     ├── main/
-    │   ├── index.ts                    # 🏠 主进程
-    │   ├── danmaku-service.ts           # 🔌 弹幕服务
-    │   ├── ai-relay.ts                 # 🤖 AI 中继
-    │   ├── quick-reply-engine.ts       # ⚡ 固定回复
-    │   ├── config-store.ts             # 🔐 配置存储
-    │   └── logger.ts                   # 📝 日志
+    │   ├── index.ts                   # 🏠 主进程
+    │   ├── danmaku-service.ts         # 🔌 弹幕服务
+    │   ├── ai-relay.ts                # 🤖 AI 中继
+    │   ├── quick-reply-engine.ts      # ⚡ 固定回复
+    │   ├── config-store.ts            # 🔐 配置存储
+    │   └── logger.ts                  # 📝 日志
     ├── preload/
-    │   └── index.ts                     # 🌉 桥接
-    └── renderer/
-        ├── index.html
-        └── src/
-            ├── App.vue                  # 🎨 主界面
-            ├── main.ts                  # 🚀 启动
-            └── pages/
-                ├── DanmakuView.vue      # 💬 弹幕监控
-                ├── RoomView.vue         # 📺 直播间
-                ├── KeywordsView.vue     # 🎯 关键词
-                ├── ModelSettingsView.vue# 🤖 AI 配置
-                ├── MatchedView.vue      # ✅ 命中记录
-                └── DevView.vue          # 🔧 开发
+    │   └── index.ts                   # 🌉 桥接
+    ├── renderer/
+    │   ├── index.html
+    │   └── src/
+    │       ├── App.vue                 # 🎨 主界面
+    │       ├── main.ts                 # 🚀 启动
+    │       ├── env.d.ts                # 📝 类型声明
+    │       ├── styles/                 # 🎨 样式
+    │       │   ├── app.css
+    │       │   ├── components.css
+    │       │   ├── danmaku.css
+    │       │   ├── dev.css
+    │       │   ├── global.css
+    │       │   ├── keywords.css
+    │       │   └── room.css
+    │       └── pages/
+    │           ├── DanmakuView.vue     # 💬 弹幕监控
+    │           ├── RoomView.vue        # 📺 直播间
+    │           ├── KeywordsView.vue    # 🎯 关键词
+│           ├── ModelSettingsView.vue    # 🤖 AI 配置
+│           ├── MatchedView.vue            # ✅ 命中记录
+│           ├── SettingsView.vue           # ⚙️ 设置
+│           └── DevView.vue                # 🔧 开发
+    └── resources/
+        └── icon.ico                    # 🖼️ 应用图标
 ```
 
 ## 🚀 快速开始
@@ -105,16 +123,14 @@ packages/
 
 ```bash
 # 克隆仓库
-git clone https://github.com/<your-username>/BilibiliClaw.git
-cd BilibiliClaw
+git clone https://github.com/xgxdmx/BiliBili-AI-Danmaku.git
+cd BiliBili-AI-Danmaku
 
 # 📦 安装 Node 依赖
 pnpm install
 
 # 🐍 安装 Python 依赖
-cd packages/danmaku-core
-pip install -r requirements.txt
-cd ../..
+cd packages/danmaku-core && pip install -r requirements.txt
 ```
 
 ### 🛠️ 开发
@@ -146,7 +162,7 @@ pnpm pack:electron
 pnpm pack:clean
 ```
 
-> 打包脚本使用 PowerShell，Windows 环境下直接运行即可。
+> 打包脚本使用 PowerShell 编写。Windows 用户直接运行即可；macOS/Linux 用户需先安装 PowerShell (`brew install powershell` 或参考官方文档)，然后执行相同命令。
 
 ## ⚙️ 配置说明
 
