@@ -28,24 +28,23 @@
 ## 🏗️ 架构概览
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                        数据流                               │
-├────────────────────────────────────────────────────────────┤
-│  🔴 B站直播间 ──WebSocket──▶ Python 弹幕核心 ──stdio──▶  │
-│                                        Electron 主进程       │
-│                                            │              │
-│                           ┌────────┬───────┴───────┐        │
-│                           ▼        ▼               ▼        │
-│                       🎯 关键词过滤                     │
-│                      ┌─────┬─────┴─────┬─────┐              │
-│                      ▼     ▼           ▼     ▼              │
-│                 ⚡固定回复  🤖AI中继 ──▶ 🌐 OpenAI API     ���
-│                 └─────┴─────┴───────┴─────┘              │
-│                           │                              │
-│                    ┌──────┴──────┐                      │
-│                    │ 🖥️ Vue 3 GUI │                      │
-│                    └─────────────┘                      │
-└────────────────────────────────────────────────────────────┘
+📺 B站直播间 ──WebSocket──> 🐍 Python 弹幕核心 ──stdio──> ⚡ Electron 主进程
+                                           │
+                              ┌────────────┼────────────┐
+                              ▼            ▼            ▼
+                          🎯 关键词    ⚡固定回复    🤖 AI 中继
+                              │            │            │
+                              │            └─────┬──────┘
+                              │                  ▼
+                              │           🌐 OpenAI API
+                              │
+                              └──────────────> 📤 弹幕回复
+                                                  ▲
+                                                  │
+                                         🎨 Vue 3 GUI ──┘
+```
+
+⚡ 核心: 弹幕 -> Python -> 过滤 -> (固定回复 | AI) -> 回发
 ```
 
 **🎬 核心数据流：**
@@ -62,37 +61,37 @@
 packages/
 ├── shared/                             # 📦 共享类型定义 (TypeScript)
 │   └── src/
-│       ├── index.ts                    # 统一导出
-│       └── types.ts                    # DanmakuMessage, KeywordRule, AppConfig 等
+│       ├── index.ts                    # 📤 统一导出
+│       └── types.ts                    # 📋 类型定义
 │
 ├── danmaku-core/                       # 🐍 Python 弹幕核心
-│   ├── receiver.py                     # 📡 弹幕接收器 (blivedm WebSocket)
-│   ├── sender.py                       # 💬 弹幕发送器 (HTTP API)
-│   ├── run.py                          # 🔌 JSON-RPC 服务器入口
-│   └── requirements.txt                # 📦 blivedm, aiohttp, brotli
+│   ├── receiver.py                     # 📥 弹幕接收器
+│   ├── sender.py                       # 📤 弹幕发送器
+│   ├── run.py                          # 🚪 入口
+│   └── requirements.txt                # 📦 依赖
 │
 └── electron-app/                       # ⚡ Electron 桌面客户端
     ├── main/
-    │   ├── index.ts                    # 🏠 主进程入口 (窗口/IPC/生命周期)
-    │   ├── danmaku-service.ts           # 🔌 弹幕服务 (管理 Python 子进程)
-    │   ├── ai-relay.ts                 # 🤖 大模型对话中继 (OpenAI 兼容)
-    │   ├── quick-reply-engine.ts       # ⚡ 固定回复引擎 (关键词→预设回复)
-    │   ├── config-store.ts             # 🔒 配置持久化 (加密 electron-store)
+    │   ├── index.ts                    # 🏠 主进程
+    │   ├── danmaku-service.ts           # 🔌 弹幕服务
+    │   ├── ai-relay.ts                 # 🤖 AI 中继
+    │   ├── quick-reply-engine.ts       # ⚡ 固定回复
+    │   ├── config-store.ts             # 🔐 配置存储
     │   └── logger.ts                   # 📝 日志
     ├── preload/
-    │   └── index.ts                     # 🌉 IPC 桥接
+    │   └── index.ts                     # 🌉 桥接
     └── renderer/
         ├── index.html
         └── src/
-            ├── App.vue                  # 🖥️ 主布局 (侧边栏 + 路由)
-            ├── main.ts                  # 🚀 Vue 入口
+            ├── App.vue                  # 🎨 主界面
+            ├── main.ts                  # 🚀 启动
             └── pages/
-                ├── DanmakuView.vue      # 📊 弹幕实时监控
-                ├── RoomView.vue         # 📺 直播间/登录配置
-                ├── KeywordsView.vue     # 🎯 关键词规则管理
-                ├── ModelSettingsView.vue# 🤖 大模型配置
-                ├── MatchedView.vue      # ✅ 匹配命中记录
-                └── DevView.vue          # 🔧 开发调试
+                ├── DanmakuView.vue      # 💬 弹幕监控
+                ├── RoomView.vue         # 📺 直播间
+                ├── KeywordsView.vue     # 🎯 关键词
+                ├── ModelSettingsView.vue# 🤖 AI 配置
+                ├── MatchedView.vue      # ✅ 命中记录
+                └── DevView.vue          # 🔧 开发
 ```
 
 ## 🚀 快速开始
