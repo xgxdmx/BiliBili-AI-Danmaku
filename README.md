@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/Vue-3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="License" />
+  <img src="https://img.shields.io/badge/License-Apache%202.0-yellow?style=flat-square" alt="License" />
 </p>
 
 ---
@@ -28,26 +28,24 @@
 ## 🏗️ 架构概览
 
 ```
-┌────────────────┐   WebSocket    ┌──────────────────┐  stdio JSON-RPC  ┌─────────────────────┐
-│  🔴 B站直播间   │ ◀────────────▶ │  🐍 Python blivedm│ ◀──────────────▶ │  ⚡ Electron 主进程    │
-│   (弹幕服务器)   │               │  (danmaku-core)  │                  │                     │
-└────────────────┘               └──────────────────┘                  │  ┌─────────────────┐ │
-       ▲                                                               │  │ 🎯 关键词过滤     │ │
-       │  💬 发送弹幕 API                                              │  └────────┬────────┘ │
-       │                                                               │    ┌──────┴──────┐   │
-       │                                                               │    ▼             ▼   │
-       └─────────────────────────────────────────────────────────────│ ⚡固定回复  🤖AI中继 │ │
-                                                                        │  Engine    Relay  │ │
-                                                                        └─────────────────┘ │
-                                                                             ▲                │
-                                                                    🌐 OpenAI API(兼容端点) │
-                                                                                             │
-                                                                   ┌─────────────────────────┘
-                                                                   │
-                                                             ┌─────┴──────┐
-                                                             │ 🖥️ Vue 3 渲染层 │
-                                                             │ (配置 / 监控)  │
-                                                             └────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                        数据流                               │
+├────────────────────────────────────────────────────────────┤
+│  🔴 B站直播间 ──WebSocket──▶ Python 弹幕核心 ──stdio──▶  │
+│                                        Electron 主进程       │
+│                                            │              │
+│                           ┌────────┬───────┴───────┐        │
+│                           ▼        ▼               ▼        │
+│                       🎯 关键词过滤                     │
+│                      ┌─────┬─────┴─────┬─────┐              │
+│                      ▼     ▼           ▼     ▼              │
+│                 ⚡固定回复  🤖AI中继 ──▶ 🌐 OpenAI API     ���
+│                 └─────┴─────┴───────┴─────┘              │
+│                           │                              │
+│                    ┌──────┴──────┐                      │
+│                    │ 🖥️ Vue 3 GUI │                      │
+│                    └─────────────┘                      │
+└────────────────────────────────────────────────────────────┘
 ```
 
 **🎬 核心数据流：**
@@ -251,4 +249,11 @@ pnpm pack:clean
 
 ## 📄 许可证
 
-[MIT](./LICENSE)
+本项目基于 Apache License 2.0 开源许可。
+
+- ✅ 可免费使用于商业和非商业目的
+- ✅ 可自由修改和分发
+- ✅ 需保留原始许可证声明
+- ❌ 不得使用项目名称进行背书
+
+详细条款请参阅 [LICENSE](./LICENSE) 文件。
