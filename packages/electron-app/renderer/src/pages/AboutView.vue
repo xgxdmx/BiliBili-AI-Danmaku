@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// ─── 应用信息 (按需手动修改) ────────────────────────────────────
+// ─── 应用信息 ─────────────────────────────────────────────────────
 const APP_INFO = {
   name: "BiliBili 弹幕 Claw",
-  version: "0.1.0",
+  version: __APP_VERSION__ || "0.1.0",
   author: "星光下的梦想",
   description: "B站直播间弹幕监听 + AI 自动回复",
   license: "Apache-2.0",
