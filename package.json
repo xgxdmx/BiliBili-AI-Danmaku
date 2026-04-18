@@ -9,14 +9,13 @@
     "url": ""
   },
   "scripts": {
-    "dev": "pnpm --filter @bilibili-danmaku-claw/electron-app dev",
-    "build": "pnpm --filter @bilibili-danmaku-claw/shared build && pnpm --filter @bilibili-danmaku-claw/electron-app build",
-    "build:electron": "pnpm --filter @bilibili-danmaku-claw/shared build && pnpm --filter @bilibili-danmaku-claw/electron-app build",
+    "dev": "pnpm --filter bilibili-danmu-claw-electron-app dev",
+    "build": "pnpm --filter @bilibili-danmaku-claw/shared build && pnpm --filter bilibili-danmu-claw-electron-app build",
     "typecheck": "pnpm -r --parallel run typecheck",
-    "pack": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1",
-    "pack:python": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipElectron",
-    "pack:electron": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -SkipPython",
-    "pack:clean": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Clean"
+    "package": "node scripts/build.mjs all",
+    "package:python": "node scripts/build.mjs python",
+    "package:electron": "node scripts/build.mjs electron",
+    "package:clean": "node scripts/build.mjs clean"
   },
   "engines": {
     "node": ">=18.0.0",
