@@ -96,6 +96,7 @@ const navItems = [
   { path: "/keywords", label: "关键词", icon: "tag" },
   { path: "/models", label: "大模型", icon: "ai" },
   { path: "/dev", label: "开发", icon: "settings" },
+  { path: "/about", label: "关于", icon: "about" },
 ];
 
 const icons: Record<string, string> = {
@@ -104,6 +105,7 @@ const icons: Record<string, string> = {
   tag: "M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0L22 12V2H12z",
   ai: "M3 20h4.2l.8-3h4l.8 3H17l-3.8-16H6.8L3 20Zm6-6 1.2-5h1.6l1.2 5ZM20 4h4v16h-4z",
   settings: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  about: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
 };
 </script>
 
@@ -121,17 +123,33 @@ const icons: Record<string, string> = {
       </div>
 
       <nav class="sidebar-nav">
-        <button
-          v-for="item in navItems"
-          :key="item.path"
-          :class="['nav-btn', { active: isActive(item.path) }]"
-          :title="item.label"
-          @click="router.push(item.path)"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path :d="icons[item.icon]"/>
-          </svg>
-        </button>
+        <div class="nav-main">
+          <button
+            v-for="item in navItems.filter(i => i.icon !== 'about')"
+            :key="item.path"
+            :class="['nav-btn', { active: isActive(item.path) }]"
+            :title="item.label"
+            @click="router.push(item.path)"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path :d="icons[item.icon]"/>
+            </svg>
+          </button>
+        </div>
+        <div class="nav-divider"></div>
+        <div class="nav-footer">
+          <button
+            v-for="item in navItems.filter(i => i.icon === 'about')"
+            :key="item.path"
+            :class="['nav-btn', { active: isActive(item.path) }]"
+            :title="item.label"
+            @click="router.push(item.path)"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path :d="icons[item.icon]"/>
+            </svg>
+          </button>
+        </div>
       </nav>
 
     </aside>
@@ -194,6 +212,28 @@ const icons: Record<string, string> = {
   align-items: center;
   gap: 4px;
   padding: 4px 0;
+}
+
+.nav-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+.nav-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .nav-btn {

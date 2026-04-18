@@ -35,6 +35,7 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--bg-active); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+/* ─── Form Elements ─── */
 input, select, textarea {
   font-family: inherit;
   font-size: 13px;
@@ -59,3 +60,64 @@ button {
   border: none;
   outline: none;
 }
+
+/* ─── Shared Page Layout ─── */
+.page { padding: 0; }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.page-title { font-size: 15px; font-weight: 600; }
+
+/* ─── Card ─── */
+.card {
+  margin: 12px;
+  padding: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.card-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.card-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
+
+/* ─── Form Field ─── */
+.field { margin-bottom: 12px; }
+.field-label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.field-input { width: 100%; }
+.optional { color: var(--text-muted); font-weight: 400; font-size: 11px; }
+
+/* ─── Button ─── */
+.btn {
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-accent { background: var(--accent); color: #1a1b26; border: none; }
+.btn-accent:hover:not(:disabled) { background: #5b8cf7; }
+
+.btn-muted { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-muted:hover { background: var(--bg-hover); }
+
+.btn-row { display: flex; align-items: center; gap: 8px; }
+
+/* ─── Message ─── */
+.msg { padding: 8px 12px; border-radius: 4px; font-size: 12px; margin-top: 10px; }
+.msg-success { background: #9ece6a20; color: var(--success); border: 1px solid #9ece6a40; }
+.msg-error { background: #f7768e20; color: var(--danger); border: 1px solid #f7768e40; }
+.msg-inline { font-size: 12px; }
+
+/* ─── Section ─── */
+.section-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }

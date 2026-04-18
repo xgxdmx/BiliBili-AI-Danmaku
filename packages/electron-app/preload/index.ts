@@ -53,6 +53,7 @@ export interface AIModelConfig {
   maxPending: number;
   ignoreUsernames: string[];
   skipReplies: string[];
+  ollamaBaseUrl?: string;
 }
 
 export interface AIConnectionStatus {
@@ -115,6 +116,7 @@ export interface DanmakuAPI {
   clearAIQueue: () => Promise<{ status: string; cleared: number }>;
   clearAIPreview: () => Promise<{ status: string; cleared: number }>;
   onAIStatus: (callback: (data: AIConnectionStatus) => void) => () => void;
+  fetchOllamaModels: (baseUrl: string) => Promise<{ status: string; models?: string[]; message?: string }>;
   onDanmaku: (callback: (data: unknown) => void) => () => void;
   onGift: (callback: (data: unknown) => void) => () => void;
   onSuperChat: (callback: (data: unknown) => void) => () => void;
@@ -147,6 +149,7 @@ const api: DanmakuAPI = {
   getAIStatus: () => ipcRenderer.invoke("ai:getStatus"),
   clearAIQueue: () => ipcRenderer.invoke("ai:clearQueue"),
   clearAIPreview: () => ipcRenderer.invoke("ai:clearPreview"),
+  fetchOllamaModels: (baseUrl: string) => ipcRenderer.invoke("ollama:listModels", baseUrl),
   onAIStatus: (callback) => {
     const handler = (_event: unknown, data: AIConnectionStatus) => callback(data);
     ipcRenderer.on("ai:status", handler);

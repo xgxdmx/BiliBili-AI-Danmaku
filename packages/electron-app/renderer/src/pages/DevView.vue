@@ -15,6 +15,7 @@ interface ConfigDisplay {
     maxPending: number;
     ignoreUsernames: string[];
     skipReplies: string[];
+    ollamaBaseUrl?: string;
   };
 }
 
@@ -37,6 +38,7 @@ const config = reactive<ConfigDisplay>({
 
 const loading = ref(false);
 const message = ref("");
+const messageType = ref<"success" | "error" | "">("");
 const showCredentials = ref(false);
 
 onMounted(async () => {
@@ -56,20 +58,25 @@ onMounted(async () => {
 async function handleExport() {
   loading.value = true;
   message.value = "";
+  messageType.value = "";
   try {
     const result = await window.danmakuAPI?.exportConfig();
     if (result?.status === "ok") {
       message.value = `已导出到: ${result.path}`;
+      messageType.value = "success";
     } else if (result?.status === "cancelled") {
       message.value = "已取消导出";
+      messageType.value = "";
     } else {
       message.value = `导出失败: ${result?.error}`;
+      messageType.value = "error";
     }
   } catch (e) {
     message.value = `导出失败: ${String(e)}`;
+    messageType.value = "error";
   }
   loading.value = false;
-  setTimeout(() => { message.value = ""; }, 5000);
+  setTimeout(() => { message.value = ""; messageType.value = ""; }, 5000);
 }
 
 async function handleImport() {
@@ -88,11 +95,13 @@ async function handleImport() {
       const result = await window.danmakuAPI?.importConfigContent(text);
       if (result?.status !== "ok") {
         message.value = `导入失败: ${result?.error || "文件格式不正确"}`;
+        messageType.value = "error";
         loading.value = false;
         return;
       }
 
       message.value = "导入成功（支持 plain-v1 / encrypted-v1）";
+      messageType.value = "success";
       // 重新加载配置显示
       const data = await window.danmakuAPI?.getConfig() as ConfigDisplay;
       if (data) {
@@ -103,9 +112,10 @@ async function handleImport() {
       }
     } catch (e) {
       message.value = `导入失败: ${String(e)}`;
+      messageType.value = "error";
     }
     loading.value = false;
-    setTimeout(() => { message.value = ""; }, 5000);
+    setTimeout(() => { message.value = ""; messageType.value = ""; }, 5000);
   };
   input.click();
 }
@@ -128,7 +138,7 @@ async function handleImport() {
           {{ loading ? "处理中..." : "导入配置" }}
         </button>
       </div>
-      <span v-if="message" class="msg">{{ message }}</span>
+      <span v-if="message" class="msg" :class="messageType === 'success' ? 'msg-success' : messageType === 'error' ? 'msg-error' : ''" style="margin-top:8px;display:block">{{ message }}</span>
     </div>
 
     <div class="card">
@@ -183,6 +193,10 @@ async function handleImport() {
         <div class="config-item">
           <span class="config-label">供应商:</span>
           <span class="config-value">{{ config.aiModel.provider || '未设置' }}</span>
+        </div>
+        <div v-if="config.aiModel.provider === 'ollama' && config.aiModel.ollamaBaseUrl" class="config-item">
+          <span class="config-label">Ollama地址:</span>
+          <span class="config-value">{{ config.aiModel.ollamaBaseUrl }}</span>
         </div>
         <div class="config-item">
           <span class="config-label">模型:</span>

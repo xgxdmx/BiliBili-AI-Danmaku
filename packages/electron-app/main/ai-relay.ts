@@ -28,6 +28,7 @@ export interface AIRelayConfig {
   sendIntervalMs: number;
   maxPending: number;
   skipReplies: string[];
+  ollamaBaseUrl?: string;
 }
 
 /** 编译后的跳过规则：纯文本或正则 */
@@ -220,18 +221,18 @@ function extractOpenAIText(data: AIResponseData): string | null {
   const flatContent = normalizeAnyText(data?.content);
   if (flatContent) return flatContent;
 
-  const skipMarker = extractSkipFromReasoning(data);
-  if (skipMarker) return skipMarker;
-
-  const finishReason = String(data?.choices?.[0]?.finish_reason || "").toLowerCase();
-  const hasReasoning = Boolean(
-    normalizeAnyText(data?.choices?.[0]?.message?.reasoning) ||
-    normalizeAnyText(data?.choices?.[0]?.message?.reasoning_details)
-  );
-  const messageContent = normalizeAnyText(data?.choices?.[0]?.message?.content);
-  if (!messageContent && finishReason === "length" && hasReasoning) {
-    // 保底策略：模型把 token 消耗在 reasoning 且 content 为空时，默认跳过发送，避免队列反复报错阻塞
-    return "NO_REPLY";
+  // 仅对 Ollama 处理 reasoning 字段
+  const isOllama = data?.model?.includes("ollama") || data?.system_fingerprint?.includes("ollama");
+  if (isOllama) {
+    const reasoningText = normalizeAnyText(data?.choices?.[0]?.message?.reasoning);
+    if (reasoningText) {
+      const cleaned = reasoningText
+        .replace(/<think[\s\S]*?<\/think>/gi, "")
+        .replace(/<thinking[\s\S]*?<\/thinking>/gi, "")
+        .replace(/\n+/g, " ")
+        .trim();
+      if (cleaned) return cleaned;
+    }
   }
 
   return null;
@@ -294,7 +295,9 @@ export class AIRelayManager extends EventEmitter {
     if (!normalized.provider || !normalized.modelId || !normalized.endpoint) {
       throw new Error("请先完整保存模型供应商配置");
     }
-    if (!normalized.apiKey) {
+    // Ollama 不需要 API Key
+    const isOllama = normalized.provider === "ollama" || normalized.endpoint.includes("localhost:11434") || normalized.endpoint.includes("ollama");
+    if (!normalized.apiKey && !isOllama) {
       throw new Error("请先填写 API Key 并保存");
     }
     if (!normalized.prompt) {

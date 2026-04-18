@@ -27,6 +27,9 @@ export default defineConfig({
         input: resolve("renderer/index.html"),
       },
     },
+    define: {
+      __APP_BUILD_DATE__: JSON.stringify(new Date().toISOString().split("T")[0]),
+    },
     resolve: {
       alias: {
         "@": resolve("renderer/src"),

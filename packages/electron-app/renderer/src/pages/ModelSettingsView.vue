@@ -82,6 +82,14 @@ const providerOptions: ProviderOption[] = [
       { id: "nemotron-3-super-free", name: "Nemotron 3 Super Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
     ],
   },
+  {
+    id: "ollama",
+    name: "Ollama (本地)",
+    description: "使用本地 Ollama 服务，无需 API Key，模型从本地实例自动拉取。确保 Ollama 已启动并拉取了模型。",
+    endpoint: "http://localhost:11434/v1/chat/completions",
+    docUrl: "https://ollama.com/library",
+    models: [], // 动态获取，初始为空
+  },
 ];
 
 const defaultPrompt = "你现在是一个直播间助理，你会收到粉丝牌+用户名+弹幕内容，请逐条回复，单条回复不超过40字。";
@@ -99,6 +107,43 @@ const form = reactive<AIModelForm>({
   ignoreUsernames: [],
   skipReplies: ["NO_REPLY", "无需回复", "不需要回复", "不用回复", "不回复", "忽略", "skip", "pass"],
 });
+
+// Ollama 动态模型列表
+const ollamaModels = ref<ProviderModel[]>([]);
+const ollamaLoading = ref(false);
+const ollamaError = ref<string | null>(null);
+const ollamaBaseUrl = ref("http://localhost:11434");
+
+async function fetchOllamaModelList() {
+  ollamaLoading.value = true;
+  ollamaError.value = null;
+  try {
+    const api = window.danmakuAPI;
+    if (!api?.fetchOllamaModels) {
+      ollamaError.value = "IPC 桥接不可用";
+      return;
+    }
+    const result = await api.fetchOllamaModels(ollamaBaseUrl.value);
+    if (result.status === "ok" && Array.isArray(result.models)) {
+      ollamaModels.value = result.models.map((name: string) => ({
+        id: name,
+        name: name,
+        endpoint: `${ollamaBaseUrl.value.replace(/\/+$/, "")}/v1/chat/completions`,
+      }));
+      // 如果当前模型不在列表中，自动选择第一个
+      if (ollamaModels.value.length > 0 && !ollamaModels.value.some(m => m.id === form.modelId)) {
+        form.modelId = ollamaModels.value[0].id;
+        form.endpoint = ollamaModels.value[0].endpoint;
+      }
+    } else {
+      ollamaError.value = result.message || "获取模型列表失败";
+    }
+  } catch (e: any) {
+    ollamaError.value = e?.message || "连接 Ollama 失败";
+  } finally {
+    ollamaLoading.value = false;
+  }
+}
 
 const skipRepliesText = ref("NO_REPLY\n无需回复\n不需要回复\n不用回复\n不回复\n忽略\nskip\npass");
 
@@ -126,7 +171,13 @@ const clearingQueue = ref(false);
 const clearingPreview = ref(false);
 
 const selectedProvider = computed(() => providerOptions.find((p) => p.id === form.provider) || providerOptions[0]);
-const modelOptions = computed(() => selectedProvider.value.models);
+const modelOptions = computed(() => {
+  // Ollama 使用动态拉取的模型列表
+  if (form.provider === "ollama") {
+    return ollamaModels.value.length > 0 ? ollamaModels.value : [];
+  }
+  return selectedProvider.value.models;
+});
 
 let promptTimer: ReturnType<typeof setTimeout> | null = null;
 let promptSavedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -146,15 +197,29 @@ watch(
     const provider = providerOptions.find((p) => p.id === providerId);
     if (!provider) return;
     form.endpoint = provider.endpoint;
-    if (!provider.models.some((m) => m.id === form.modelId)) {
+    // Ollama: 自动拉取模型列表，API Key 留空，Endpoint 由地址栏驱动
+    if (providerId === "ollama") {
+      form.apiKey = "";
+      form.endpoint = `${ollamaBaseUrl.value.replace(/\/+$/, "")}/v1/chat/completions`;
+      fetchOllamaModelList();
+    } else if (!provider.models.some((m) => m.id === form.modelId)) {
       form.modelId = provider.models[0]?.id || "";
     }
   }
 );
 
+// Ollama 地址变更时同步 Endpoint
+watch(ollamaBaseUrl, (url) => {
+  if (form.provider === "ollama") {
+    form.endpoint = `${url.replace(/\/+$/, "")}/v1/chat/completions`;
+  }
+});
+
 watch(
   () => form.modelId,
   (modelId) => {
+    // Ollama 模型切换由 ollamaBaseUrl watch 处理，不走 provider.models
+    if (form.provider === "ollama") return;
     const provider = selectedProvider.value;
     const model = provider.models.find((m) => m.id === modelId);
     if (model) {
@@ -180,6 +245,10 @@ async function loadConfig() {
   try {
     const cfg = await api.getConfig();
     if (cfg.aiModel) {
+      // 先恢复 ollamaBaseUrl，避免 provider watch 触发时地址还是默认值
+      if (cfg.aiModel.ollamaBaseUrl) {
+        ollamaBaseUrl.value = cfg.aiModel.ollamaBaseUrl;
+      }
       form.provider = cfg.aiModel.provider || form.provider;
       form.apiKey = cfg.aiModel.apiKey || "";
       form.modelId = cfg.aiModel.modelId || form.modelId;
@@ -224,6 +293,7 @@ async function handleSave() {
       maxPending: Math.max(10, Number(form.maxPending || 100)),
       ignoreUsernames: form.ignoreUsernames,
       skipReplies: parseSkipRepliesText(),
+      ollamaBaseUrl: ollamaBaseUrl.value,
     }));
     const result = await api.setConfig("aiModel", payload);
     if (result?.status !== "ok") {
@@ -278,6 +348,22 @@ async function handleConnect() {
       promptTimer = null;
     }
     await flushPromptIfNeeded();
+    // 连接前先保存完整配置，确保 store 中有最新的 provider/endpoint 等值
+    const saveResult = await api.setConfig("aiModel", JSON.parse(JSON.stringify({
+      provider: form.provider,
+      apiKey: form.apiKey,
+      modelId: form.modelId,
+      endpoint: form.endpoint,
+      prompt: form.prompt,
+      sendIntervalMs: Math.max(500, Number(form.sendIntervalMs || 1800)),
+      maxPending: Math.max(10, Number(form.maxPending || 100)),
+      ignoreUsernames: form.ignoreUsernames,
+      skipReplies: parseSkipRepliesText(),
+      ollamaBaseUrl: ollamaBaseUrl.value,
+    })));
+    if (saveResult?.status !== "ok") {
+      throw new Error("连接前保存配置失败，请先点击「保存供应商配置」");
+    }
     const result = await api.connectAI();
     if (result?.status !== "ok") {
       throw new Error(result?.message || "连接失败");
@@ -416,23 +502,52 @@ onUnmounted(() => {
         </select>
       </div>
 
-      <div class="field">
-        <label class="field-label">模型</label>
-        <select v-model="form.modelId" class="field-input">
-          <option v-for="model in modelOptions" :key="model.id" :value="model.id">
-            {{ model.name }} ({{ model.id }})
-          </option>
-        </select>
-      </div>
+      <!-- Ollama: 自定义地址 + 拉取模型 -->
+      <template v-if="form.provider === 'ollama'">
+        <div class="field">
+          <label class="field-label">Ollama 地址</label>
+          <div class="ollama-url-row">
+            <input v-model="ollamaBaseUrl" type="text" placeholder="http://localhost:11434" class="field-input ollama-url-input" />
+            <button class="btn btn-accent ollama-fetch-btn" :disabled="ollamaLoading" @click="fetchOllamaModelList">
+              {{ ollamaLoading ? "获取中..." : "刷新模型" }}
+            </button>
+          </div>
+          <div v-if="ollamaError" class="msg-inline msg-error">{{ ollamaError }}</div>
+          <div v-if="ollamaModels.length > 0" class="msg-inline msg-success" style="margin-top:6px">已获取 {{ ollamaModels.length }} 个模型</div>
+        </div>
 
-      <div class="field">
-        <label class="field-label">API Key</label>
-        <input v-model="form.apiKey" type="password" placeholder="输入从供应商控制台获取的 API Key" class="field-input" />
-      </div>
+        <div class="field">
+          <label class="field-label">模型</label>
+          <select v-model="form.modelId" class="field-input">
+            <option v-for="model in modelOptions" :key="model.id" :value="model.id">
+              {{ model.name }}
+            </option>
+          </select>
+          <div v-if="modelOptions.length === 0 && !ollamaLoading" class="msg-inline" style="margin-top:4px">请先点击「刷新模型」拉取本地模型列表</div>
+        </div>
+      </template>
+
+      <!-- 非 Ollama: 固定模型列表 + API Key -->
+      <template v-else>
+        <div class="field">
+          <label class="field-label">模型</label>
+          <select v-model="form.modelId" class="field-input">
+            <option v-for="model in modelOptions" :key="model.id" :value="model.id">
+              {{ model.name }} ({{ model.id }})
+            </option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field-label">API Key</label>
+          <input v-model="form.apiKey" type="password" placeholder="输入从供应商控制台获取的 API Key" class="field-input" />
+        </div>
+      </template>
 
       <div class="field">
         <label class="field-label">Endpoint</label>
-        <input v-model="form.endpoint" type="text" class="field-input" readonly />
+        <input v-model="form.endpoint" type="text" class="field-input" :readonly="form.provider !== 'ollama'" />
+        <div v-if="form.provider === 'ollama'" class="msg-inline">Ollama 使用 OpenAI 兼容接口，可修改为远程服务器地址</div>
       </div>
 
       <div class="field field-inline-2">
@@ -546,21 +661,67 @@ onUnmounted(() => {
     </div>
 
     <div class="card">
-      <h3 class="card-title">供应商说明 - OpenCode</h3>
+      <h3 class="card-title">供应商说明 - {{ selectedProvider.name }}</h3>
       <p class="card-desc">
-        OpenCode 提供统一的 API 接入，兼容 OpenAI/Anthropic/Gemini 协议。注册账号后前往控制台复制 API Key，填入上方即可使用。
+        {{ selectedProvider.description }}
       </p>
-      <ul class="card-desc">
-        <li>文档：<a :href="selectedProvider.docUrl" target="_blank">{{ selectedProvider.docUrl }}</a></li>
-        <li>免费额度：多数模型提供免费限额，详见官方公告。</li>
-        <li>SDK：兼容 `@ai-sdk/openai`、`@ai-sdk/anthropic`、`@ai-sdk/google` 等包。</li>
-      </ul>
+      <template v-if="form.provider === 'ollama'">
+        <ul class="card-desc">
+          <li>无需 API Key，本地运行，数据不出本机</li>
+          <li>确保 Ollama 已启动：<code>ollama serve</code></li>
+          <li>拉取模型：<code>ollama pull llama3</code></li>
+          <li>支持自定义地址（可指向局域网内其他机器）</li>
+        </ul>
+      </template>
+      <template v-else>
+        <ul class="card-desc">
+          <li>文档：<a :href="selectedProvider.docUrl" target="_blank">{{ selectedProvider.docUrl }}</a></li>
+          <li>免费额度：多数模型提供免费限额，详见官方公告。</li>
+          <li>SDK：兼容 <code>@ai-sdk/openai</code>、<code>@ai-sdk/anthropic</code>、<code>@ai-sdk/google</code> 等包。</li>
+        </ul>
+      </template>
     </div>
   </div>
 </template>
 
 <style scoped>
-@import "../styles/components.css";
+@import "../styles/model-settings.css";
+
+/* ─── AI Flow Diagram ─── */
+.flow { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.flow-step { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.flow-icon { font-size: 24px; }
+.flow-text { font-size: 11px; color: var(--text-secondary); }
+.flow-arrow { color: var(--text-muted); font-size: 16px; }
+
+/* ─── Code Block ─── */
+.code-block {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ─── Ollama ─── */
+.ollama-url-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ollama-url-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ollama-fetch-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 .field-inline-2 {
   display: grid;

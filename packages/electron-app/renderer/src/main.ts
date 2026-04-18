@@ -7,6 +7,7 @@ import KeywordsView from "./pages/KeywordsView.vue";
 import ModelSettingsView from "./pages/ModelSettingsView.vue";
 import DevView from "./pages/DevView.vue";
 import SettingsView from "./pages/SettingsView.vue";
+import AboutView from "./pages/AboutView.vue";
 
 // 引入全局样式
 import "./styles/global.css";
@@ -20,6 +21,7 @@ const router = createRouter({
     { path: "/models", component: ModelSettingsView },
     { path: "/dev", component: DevView },
     { path: "/settings", component: SettingsView },
+    { path: "/about", component: AboutView },
   ],
 });
 

@@ -334,6 +334,7 @@ danmakuService.on("danmaku", (data) => {
     const defaultPath = app.isPackaged
       ? join(app.getPath("documents"), "config-export.json")
       : join(process.cwd(), "config-export.json");
+    // @ts-ignore
     const result = await dialog.showSaveDialog(mainWindow || undefined, {
       title: "导出配置",
       defaultPath,
@@ -471,6 +472,7 @@ danmakuService.on("danmaku", (data) => {
       sendIntervalMs: aiModel.sendIntervalMs,
       maxPending: aiModel.maxPending,
       skipReplies: Array.isArray(aiModel.skipReplies) ? aiModel.skipReplies : [],
+      ollamaBaseUrl: aiModel.ollamaBaseUrl,
     });
 
     const status = aiRelay.getStatus();
@@ -507,6 +509,24 @@ danmakuService.on("danmaku", (data) => {
     const result = aiRelay.clearDecisionHistory();
     latestAIStatus = aiRelay.getStatus();
     return { status: "ok", ...result };
+  });
+
+  // Ollama 模型列表获取 — 渲染进程调用以动态拉取本地模型
+  ipcMain.handle("ollama:listModels", async (_event, baseUrl: string) => {
+    try {
+      const url = baseUrl.replace(/\/+$/, "") + "/api/tags";
+      const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) {
+        return { status: "error", message: `Ollama 返回 ${resp.status}` };
+      }
+      const data = await resp.json();
+      const models = Array.isArray(data?.models)
+        ? data.models.map((m: any) => m.name || m.model || String(m))
+        : [];
+      return { status: "ok", models };
+    } catch (err: any) {
+      return { status: "error", message: err?.message || "无法连接 Ollama" };
+    }
   });
 }
 

@@ -53,6 +53,7 @@ export interface AIModelConfig {
   maxPending: number;
   ignoreUsernames: string[];
   skipReplies: string[];
+  ollamaBaseUrl?: string;
 }
 
 export interface ConfigSchema {
@@ -88,6 +89,7 @@ const schema: ConfigSchema = {
     maxPending: 100,
     ignoreUsernames: [],
     skipReplies: ["NO_REPLY", "无需回复", "不需要回复", "不用回复", "不回复", "忽略", "skip", "pass"],
+    ollamaBaseUrl: "http://localhost:11434",
   },
 };
 
