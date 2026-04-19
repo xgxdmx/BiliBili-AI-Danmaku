@@ -523,28 +523,35 @@ danmakuService.on("danmaku", (data) => {
 
   // ─── AI 中继 IPC ─────────────────────────────────────────
 
-  /** 连接 AI 供应商：从 config-store 读取配置 → 传入 AIRelayManager.connect() */
+  /** 连接 AI 供应商：合并共享配置 + 当前供应商独立配置 → 传入 AIRelayManager.connect() */
   ipcMain.handle("ai:connect", async () => {
     if (!aiRelay) {
       throw new Error("AI relay not ready");
     }
     const cfg = getConfig();
     const aiModel = cfg.aiModel;
+    const providerName = aiModel.provider;
+    const providerCfg = aiModel.providers?.[providerName];
+
+    if (!providerCfg) {
+      throw new Error(`未找到供应商 "${providerName}" 的配置`);
+    }
+
     await aiRelay.connect({
-      provider: aiModel.provider,
-      apiKey: aiModel.apiKey,
-      modelId: aiModel.modelId,
-      endpoint: aiModel.endpoint,
+      provider: providerName,
+      apiKey: providerCfg.apiKey,
+      modelId: providerCfg.modelId,
+      endpoint: providerCfg.endpoint,
       prompt: aiModel.prompt,
       sendIntervalMs: aiModel.sendIntervalMs,
       maxPending: aiModel.maxPending,
       skipReplies: Array.isArray(aiModel.skipReplies) ? aiModel.skipReplies : [],
-      ollamaBaseUrl: aiModel.ollamaBaseUrl,
-      maxTokens: aiModel.maxTokens,
-      temperature: aiModel.temperature,
-      topP: aiModel.topP,
-      ollamaKeepAlive: aiModel.ollamaKeepAlive,
-      requestTimeoutMs: aiModel.requestTimeoutMs,
+      ollamaBaseUrl: providerCfg.ollamaBaseUrl,
+      maxTokens: providerCfg.maxTokens,
+      temperature: providerCfg.temperature,
+      topP: providerCfg.topP,
+      ollamaKeepAlive: providerCfg.ollamaKeepAlive,
+      requestTimeoutMs: providerCfg.requestTimeoutMs,
     });
 
     const status = aiRelay.getStatus();

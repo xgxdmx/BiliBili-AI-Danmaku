@@ -58,33 +58,50 @@ export interface RoomConfig {
 }
 
 /**
+ * 单个供应商的模型配置。
+ * 每个供应商（opencode / ollama）独立维护自己的模型参数和凭证。
+ */
+export interface ProviderConfig {
+  /** 当前选中的模型 ID */
+  modelId: string;
+  /** API Key（opencode 需要，ollama 不需要） */
+  apiKey: string;
+  /** API 端点 */
+  endpoint: string;
+  /** Ollama 服务地址（仅 ollama） */
+  ollamaBaseUrl?: string;
+  /** 最大输出 token 数 */
+  maxTokens: number;
+  /** 回复温度 (0~2) */
+  temperature: number;
+  /** 核采样概率累积截断 (0~1) */
+  topP: number;
+  /** Ollama 模型保活时间，如 "5m"（仅 ollama） */
+  ollamaKeepAlive?: string;
+  /** 单次请求超时(ms) */
+  requestTimeoutMs: number;
+}
+
+/**
  * AI 大模型配置。
- * 当前供应商通过 provider 字段区分（opencode / ollama），
- * apiKeys 按供应商名保存各供应商密钥，切换供应商时不会丢失。
+ * 共享字段（prompt/间隔/队列等）为全局配置，
+ * 各供应商通过 providers 映射维护独立参数和凭证。
  */
 export interface AIModelConfig {
+  /** 当前激活的供应商（"opencode" / "ollama"） */
   provider: string;
-  apiKey: string;
-  modelId: string;
-  endpoint: string;
+  /** 系统提示词 */
   prompt: string;
+  /** 发送间隔(ms)，防止风控 */
   sendIntervalMs: number;
+  /** 待处理队列上限 */
   maxPending: number;
+  /** 忽略的用户名列表 */
   ignoreUsernames: string[];
+  /** 跳过回复的关键词 */
   skipReplies: string[];
-  ollamaBaseUrl?: string;
-  /** 最大输出 token 数（含 thinking）。Ollama thinking 模型建议 ≥ 2048 */
-  maxTokens?: number;
-  /** 回复温度 (0~2) */
-  temperature?: number;
-  /** 核采样概率累积截断 (0~1)，与温度互补 */
-  topP?: number;
-  /** Ollama 模型保活时间，如 "5m" */
-  ollamaKeepAlive?: string;
-  /** 单次请求超时(ms)。Ollama 建议 ≥ 120000，云端 30000 */
-  requestTimeoutMs?: number;
-  /** 各供应商 API Key 映射，避免切换供应商时丢失已保存的密钥 */
-  apiKeys?: Record<string, string>;
+  /** 各供应商独立配置映射 */
+  providers: Record<string, ProviderConfig>;
 }
 
 /** 应用配置总结构，对应 electron-store 存储的完整 schema */
@@ -119,21 +136,33 @@ const schema: ConfigSchema = {
   quickReplies: [],
   aiModel: {
     provider: "opencode",
-    apiKey: "",
-    modelId: "minimax-m2.5-free",
-    endpoint: "https://opencode.ai/zen/v1/chat/completions",
     prompt: "你现在是一个直播间助理，你会收到粉丝牌+用户名+弹幕内容，请逐条回复，单条回复不超过40字。",
     sendIntervalMs: 1800,
     maxPending: 100,
     ignoreUsernames: [],
     skipReplies: ["NO_REPLY", "无需回复", "不需要回复", "不用回复", "不回复", "忽略", "skip", "pass"],
-    ollamaBaseUrl: "http://localhost:11434",
-    maxTokens: 256,
-    temperature: 0.7,
-    topP: 1,
-    ollamaKeepAlive: "5m",
-    requestTimeoutMs: 30000,
-    apiKeys: {},
+    providers: {
+      opencode: {
+        modelId: "minimax-m2.5-free",
+        apiKey: "",
+        endpoint: "https://opencode.ai/zen/v1/chat/completions",
+        maxTokens: 256,
+        temperature: 0.7,
+        topP: 1,
+        requestTimeoutMs: 30000,
+      },
+      ollama: {
+        modelId: "",
+        apiKey: "",
+        endpoint: "http://localhost:11434/v1/chat/completions",
+        ollamaBaseUrl: "http://localhost:11434",
+        maxTokens: 2048,
+        temperature: 0.7,
+        topP: 1,
+        ollamaKeepAlive: "5m",
+        requestTimeoutMs: 120000,
+      },
+    },
   },
   theme: "system",
 };
@@ -240,9 +269,9 @@ const store = initializeStore();
 
 // ─── 公共读写 API ──────────────────────────────────────────
 
-/** 读取完整配置（各字段缺失时回退到 schema 默认值） */
+/** 读取完整配置（各字段缺失时回退到 schema 默认值，自动迁移旧版 aiModel 结构） */
 export function getConfig(): ConfigSchema {
-  return {
+  const raw = {
     room: store.get("room", schema.room),
     credentials: store.get("credentials", schema.credentials),
     keywords: store.get("keywords", schema.keywords),
@@ -250,6 +279,66 @@ export function getConfig(): ConfigSchema {
     aiModel: store.get("aiModel", schema.aiModel),
     theme: store.get("theme", schema.theme),
   };
+
+  // 迁移旧版 aiModel（扁平结构 → per-provider 结构）
+  raw.aiModel = migrateAIModel(raw.aiModel);
+
+  return raw;
+}
+
+/**
+ * 将旧版扁平 aiModel 配置迁移为 per-provider 结构。
+ * 检测标志：存在顶层 apiKey 字段且不存在 providers 字段。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function migrateAIModel(ai: any): AIModelConfig {
+  if (!ai) return schema.aiModel;
+  // 已经是新格式
+  if (ai.providers && typeof ai.providers === "object") {
+    return ai as AIModelConfig;
+  }
+
+  // 旧格式迁移：将扁平字段拆入 providers
+  const oldProvider = ai.provider || "opencode";
+  const migrated: AIModelConfig = {
+    provider: oldProvider,
+    prompt: ai.prompt || schema.aiModel.prompt,
+    sendIntervalMs: Number(ai.sendIntervalMs || schema.aiModel.sendIntervalMs),
+    maxPending: Number(ai.maxPending || schema.aiModel.maxPending),
+    ignoreUsernames: ai.ignoreUsernames || [],
+    skipReplies: ai.skipReplies || schema.aiModel.skipReplies,
+    providers: {
+      opencode: {
+        modelId: oldProvider === "opencode" ? (ai.modelId || "minimax-m2.5-free") : "minimax-m2.5-free",
+        apiKey: (ai.apiKeys && ai.apiKeys.opencode) || ai.apiKey || "",
+        endpoint: oldProvider === "opencode" ? (ai.endpoint || "https://opencode.ai/zen/v1/chat/completions") : "https://opencode.ai/zen/v1/chat/completions",
+        maxTokens: Number(oldProvider === "opencode" ? (ai.maxTokens || 256) : 256),
+        temperature: Number(ai.temperature ?? 0.7),
+        topP: Number(ai.topP ?? 1),
+        requestTimeoutMs: Number(oldProvider === "opencode" ? (ai.requestTimeoutMs || 30000) : 30000),
+      },
+      ollama: {
+        modelId: oldProvider === "ollama" ? (ai.modelId || "") : "",
+        apiKey: "",
+        endpoint: `${(ai.ollamaBaseUrl || "http://localhost:11434").replace(/\/+$/, "")}/v1/chat/completions`,
+        ollamaBaseUrl: ai.ollamaBaseUrl || "http://localhost:11434",
+        maxTokens: Number(oldProvider === "ollama" ? (ai.maxTokens || 2048) : 2048),
+        temperature: Number(ai.temperature ?? 0.7),
+        topP: Number(ai.topP ?? 1),
+        ollamaKeepAlive: ai.ollamaKeepAlive || "5m",
+        requestTimeoutMs: Number(oldProvider === "ollama" ? (ai.requestTimeoutMs || 120000) : 120000),
+      },
+    },
+  };
+
+  // 写回 store 以便后续读取不再需要迁移
+  try {
+    store.set("aiModel", migrated);
+  } catch {
+    // 迁移写入失败时静默处理
+  }
+
+  return migrated;
 }
 
 /** 设置顶层配置键值（类型安全） */
@@ -338,14 +427,23 @@ export function exportConfigToFile(
     const exportedCredentials = includeSensitive
       ? config.credentials
       : { sessdata: "", biliJct: "", buvid3: "" };
-    const exportedApiKey = includeSensitive ? ai.apiKey : "";
-    const exportedApiKeys = includeSensitive ? (ai.apiKeys || {}) : {};
+
+    // 脱敏各供应商配置中的 apiKey
+    const exportedProviders: Record<string, unknown> = {};
+    if (ai.providers && typeof ai.providers === "object") {
+      for (const [pid, pc] of Object.entries(ai.providers as Record<string, any>)) {
+        exportedProviders[pid] = {
+          ...pc,
+          apiKey: includeSensitive ? (pc.apiKey || "") : "",
+        };
+      }
+    }
 
     const exportPayload = {
       __meta: {
         format: "plain-v2",
         appName: "BiliBili弹幕Claw",
-        exportedAt: new Date().toISOString(),
+        exportedAt: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().replace("Z", "+08:00"),
         machineId: getMachineId(),
       },
       room: config.room,
@@ -353,26 +451,13 @@ export function exportConfigToFile(
       keywords: config.keywords,
       quickReplies: config.quickReplies,
       aiModel: {
-        // 供应商配置
         provider: ai.provider,
-        apiKey: exportedApiKey,
-        modelId: ai.modelId,
-        endpoint: ai.endpoint,
-        ollamaBaseUrl: ai.ollamaBaseUrl,
-        // 提示词
         prompt: ai.prompt,
-        // 回复行为
         sendIntervalMs: ai.sendIntervalMs,
         maxPending: ai.maxPending,
         ignoreUsernames: ai.ignoreUsernames,
         skipReplies: ai.skipReplies,
-        // 模型参数
-        maxTokens: ai.maxTokens,
-        temperature: ai.temperature,
-        topP: ai.topP,
-        ollamaKeepAlive: ai.ollamaKeepAlive,
-        requestTimeoutMs: ai.requestTimeoutMs,
-        apiKeys: exportedApiKeys,
+        providers: exportedProviders,
       },
     };
     const configDir = store.path ? dirname(store.path) : process.cwd();

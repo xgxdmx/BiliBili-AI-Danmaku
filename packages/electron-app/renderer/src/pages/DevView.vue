@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from "vue";
 
+interface ProviderConfig {
+  modelId: string;
+  apiKey: string;
+  endpoint: string;
+  ollamaBaseUrl?: string;
+  maxTokens: number;
+  temperature: number;
+  topP: number;
+  ollamaKeepAlive?: string;
+  requestTimeoutMs: number;
+}
+
 interface ConfigDisplay {
   room: { roomId: number; enabled: boolean; minMedalLevel: number };
   credentials: { sessdata: string; biliJct: string; buvid3: string };
@@ -8,14 +20,10 @@ interface ConfigDisplay {
   quickReplies: Array<{ id: string; enabled: boolean; contains: string[]; notContains: string[]; regex: string; reply: string; caseSensitive: boolean; cooldownMs: number }>;
   aiModel: {
     provider: string;
-    modelId: string;
-    endpoint: string;
     prompt: string;
     sendIntervalMs: number;
     maxPending: number;
-    ignoreUsernames: string[];
-    skipReplies: string[];
-    ollamaBaseUrl?: string;
+    providers: Record<string, ProviderConfig>;
   };
 }
 
@@ -26,13 +34,10 @@ const config = reactive<ConfigDisplay>({
   quickReplies: [],
   aiModel: {
     provider: "",
-    modelId: "",
-    endpoint: "",
     prompt: "",
     sendIntervalMs: 1800,
     maxPending: 100,
-    ignoreUsernames: [],
-    skipReplies: [],
+    providers: {},
   },
 });
 
@@ -44,13 +49,21 @@ const exportIncludeSensitive = ref(false);
 
 onMounted(async () => {
   try {
-    const data = await window.danmakuAPI?.getConfig() as ConfigDisplay;
+    const data = await window.danmakuAPI?.getConfig() as any;
     if (data) {
-      config.room = data.room;
-      config.credentials = data.credentials;
-      config.keywords = data.keywords;
-      config.quickReplies = (data as any).quickReplies || [];
-      config.aiModel = data.aiModel;
+      config.room = data.room || config.room;
+      config.credentials = data.credentials || config.credentials;
+      config.keywords = Array.isArray(data.keywords) ? data.keywords : [];
+      config.quickReplies = Array.isArray(data.quickReplies) ? data.quickReplies : [];
+      if (data.aiModel) {
+        config.aiModel = {
+          provider: data.aiModel.provider || "",
+          prompt: data.aiModel.prompt || "",
+          sendIntervalMs: data.aiModel.sendIntervalMs || 1800,
+          maxPending: data.aiModel.maxPending || 100,
+          providers: data.aiModel.providers || {},
+        };
+      }
     }
   } catch (e) {
     }
@@ -205,20 +218,44 @@ async function handleImport() {
       <div class="config-section">
         <h4 class="section-title">AI模型</h4>
         <div class="config-item">
-          <span class="config-label">供应商:</span>
+          <span class="config-label">当前供应商:</span>
           <span class="config-value">{{ config.aiModel.provider || '未设置' }}</span>
         </div>
-        <div v-if="config.aiModel.provider === 'ollama' && config.aiModel.ollamaBaseUrl" class="config-item">
-          <span class="config-label">Ollama地址:</span>
-          <span class="config-value">{{ config.aiModel.ollamaBaseUrl }}</span>
-        </div>
         <div class="config-item">
-          <span class="config-label">模型:</span>
-          <span class="config-value">{{ config.aiModel.modelId || '未设置' }}</span>
-        </div>
-        <div class="config-item">
-          <span class="config-label">间隔(ms):</span>
+          <span class="config-label">发送间隔(ms):</span>
           <span class="config-value">{{ config.aiModel.sendIntervalMs }}</span>
+        </div>
+        <div class="config-item">
+          <span class="config-label">最大队列:</span>
+          <span class="config-value">{{ config.aiModel.maxPending }}</span>
+        </div>
+        <!-- 遍历每个供应商的独立配置 -->
+        <div v-for="(pc, pid) in config.aiModel.providers" :key="pid" class="provider-block">
+          <h5 class="provider-title">{{ pid === 'opencode' ? 'OpenCode' : pid === 'ollama' ? 'Ollama' : pid }}</h5>
+          <div class="config-item">
+            <span class="config-label">模型:</span>
+            <span class="config-value">{{ pc.modelId || '未设置' }}</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">端点:</span>
+            <span class="config-value">{{ pc.endpoint || '默认' }}</span>
+          </div>
+          <div v-if="pid === 'ollama' && pc.ollamaBaseUrl" class="config-item">
+            <span class="config-label">Ollama地址:</span>
+            <span class="config-value">{{ pc.ollamaBaseUrl }}</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">温度:</span>
+            <span class="config-value">{{ pc.temperature }}</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Top P:</span>
+            <span class="config-value">{{ pc.topP }}</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">最大Token:</span>
+            <span class="config-value">{{ pc.maxTokens }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -301,5 +338,23 @@ async function handleImport() {
 
 .toggle-pill.active .toggle-knob {
   transform: translateX(16px);
+}
+
+/* ─── 供应商配置块 ─── */
+.provider-block {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.provider-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 </style>

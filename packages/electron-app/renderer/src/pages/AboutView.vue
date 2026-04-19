@@ -14,10 +14,12 @@ const APP_INFO = {
 // ─── 技术栈 ─────────────────────────────────────────────────────
 const TECH_STACK = [
   { name: "Electron", version: "41" },
+  { name: "Vite", version: "6.4.1" },
   { name: "Vue", version: "3" },
-  { name: "Python", version: "3.10+" },
-  { name: "blivedm", version: "" },
-  { name: "aiohttp", version: "≥3.9" },
+  { name: "Python", version: "3.13" },
+  { name: "aiohttp", version: "3.9" },
+  { name: "blivedm", version: "1.1.5" },
+
 ];
 
 // ─── 开源致谢 ───────────────────────────────────────────────────
