@@ -9,7 +9,7 @@
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: linear-gradient(180deg, #26283a 0%, #1f2030 100%);
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
 }
 
 .switch-label {
@@ -30,8 +30,8 @@
   width: 40px;
   height: 22px;
   border-radius: 999px;
-  background: #323754;
-  border: 1px solid #3d4368;
+  background: var(--bg-active);
+  border: 1px solid var(--border);
   transition: all 0.18s ease;
 }
 
@@ -39,6 +39,12 @@
   background: linear-gradient(90deg, #5a86f0 0%, #7aa2f7 100%);
   border-color: #7aa2f7;
   box-shadow: 0 0 0 2px #7aa2f726;
+}
+
+[data-theme="light"] .switch-track.on {
+  background: linear-gradient(90deg, #3a6af0 0%, #4a7af7 100%);
+  border-color: #4a7af7;
+  box-shadow: 0 0 0 2px #4a7af726;
 }
 
 .switch-thumb {
@@ -49,7 +55,7 @@
   height: 16px;
   border-radius: 50%;
   background: #e8eeff;
-  box-shadow: 0 1px 3px #00000050;
+  box-shadow: 0 1px 3px #00000030;
   transition: transform 0.18s ease;
 }
 

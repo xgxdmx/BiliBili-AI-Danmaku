@@ -8,7 +8,7 @@
 //   4. 进程退出清理（SIGINT / SIGTERM / window-all-closed）
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, dialog, nativeTheme } from "electron";
 import { join } from "path";
 import { DanmakuService } from "./danmaku-service";
 import { getConfig, setConfigPath, exportConfigToFile, importConfigFromFile, importConfigFromContent } from "./config-store";
@@ -216,11 +216,15 @@ function registerIpcHandlers(): void {
     if (!danmakuService) {
       danmakuService = new DanmakuService();
 danmakuService.on("danmaku", (data) => {
-        mainWindow?.webContents.send("danmaku:received", data);
-        const username = data?.sender?.username || "";
-        if (shouldIgnoreByUsername(username)) return;
+         mainWindow?.webContents.send("danmaku:received", data);
+         const username = data?.sender?.username || "";
+         if (shouldIgnoreByUsername(username)) return;
 
-        const matchScope = (data?.match?.rule?.scope as "both" | "quickReply" | "ai") || "both";
+         // ── 捕捉开关 ──
+         // 关闭后弹幕仅显示，不进入关键词匹配 / 固定回复 / AI 回复流程
+         if (getConfig().room?.captureEnabled === false) return;
+
+         const matchScope = (data?.match?.rule?.scope as "both" | "quickReply" | "ai") || "both";
         const hasKeywordMatch = !!data?.match;
         const content = data?.content || "";
         const activeScopes = danmakuService?.getKeywordFilterScopes() ?? new Set<"both" | "quickReply" | "ai">();
@@ -390,22 +394,29 @@ danmakuService.on("danmaku", (data) => {
     }
   });
 
-  /** 弹出文件对话框导出配置到 JSON */
-  ipcMain.handle("config:export", async () => {
+  /** 弹出文件对话框导出配置到 JSON（可选是否包含敏感信息） */
+  ipcMain.handle("config:export", async (_event, options?: { includeSensitive?: boolean }) => {
     const defaultPath = app.isPackaged
       ? join(app.getPath("documents"), "config-export.json")
       : join(process.cwd(), "config-export.json");
-    const result = await dialog.showSaveDialog(mainWindow ?? undefined, {
-      title: "导出配置",
-      defaultPath,
-      filters: [{ name: "JSON 文件", extensions: ["json"] }],
-      properties: ["createDirectory", "showOverwriteConfirmation"],
-    });
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, {
+          title: "导出配置",
+          defaultPath,
+          filters: [{ name: "JSON 文件", extensions: ["json"] }],
+          properties: ["createDirectory", "showOverwriteConfirmation"],
+        })
+      : await dialog.showSaveDialog({
+          title: "导出配置",
+          defaultPath,
+          filters: [{ name: "JSON 文件", extensions: ["json"] }],
+          properties: ["createDirectory", "showOverwriteConfirmation"],
+        });
 
     if (result.canceled || !result.filePath) {
       return { status: "cancelled" };
     }
-    return exportConfigToFile(result.filePath);
+    return exportConfigToFile(result.filePath, options);
   });
 
   /** 从文件路径导入配置 */
@@ -621,6 +632,41 @@ danmakuService.on("danmaku", (data) => {
       return { status: "ok", models };
     } catch (err: any) {
       return { status: "error", message: err?.message || "无法连接 OpenCode" };
+    }
+  });
+
+  // ─── 主题 IPC ──────────────────────────────────────────────
+
+  /** 根据配置模式解析实际主题（system → 读取操作系统偏好） */
+  const resolveTheme = (mode: "light" | "dark" | "system"): "light" | "dark" => {
+    if (mode === "system") return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+    return mode;
+  };
+
+  /** 将解析后的主题通知渲染进程 */
+  const notifyThemeChange = (resolved: "light" | "dark"): void => {
+    mainWindow?.webContents.send("theme:changed", resolved);
+  };
+
+  /** 获取当前主题配置和解析结果 */
+  ipcMain.handle("theme:get", async () => {
+    const mode = getConfig().theme || "system";
+    return { mode, resolved: resolveTheme(mode) };
+  });
+
+  /** 设置主题模式并通知渲染进程 */
+  ipcMain.handle("theme:set", async (_event, mode: "light" | "dark" | "system") => {
+    setConfigPath("theme", mode);
+    const resolved = resolveTheme(mode);
+    notifyThemeChange(resolved);
+    return { resolved };
+  });
+
+  /** 监听操作系统主题变化，当配置为 system 时自动切换 */
+  nativeTheme.on("updated", () => {
+    const mode = getConfig().theme || "system";
+    if (mode === "system") {
+      notifyThemeChange(resolveTheme("system"));
     }
   });
 }

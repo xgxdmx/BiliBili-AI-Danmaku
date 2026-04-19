@@ -50,6 +50,8 @@ export interface QuickReplyRule {
 export interface RoomConfig {
   roomId: number;
   enabled: boolean;
+  /** 弹幕捕捉总开关。关闭后弹幕仍正常显示，但不进入关键词匹配 / 固定回复 / AI 回复流程 */
+  captureEnabled: boolean;
   minMedalLevel: number;
   sendOnDisconnect: boolean;
   disconnectMessage: string;
@@ -92,6 +94,8 @@ export interface ConfigSchema {
   keywords: KeywordRule[];
   quickReplies: QuickReplyRule[];
   aiModel: AIModelConfig;
+  /** 主题模式：light / dark / system */
+  theme: "light" | "dark" | "system";
 }
 
 // ─── 默认值 & 常量 ──────────────────────────────────────────
@@ -101,6 +105,7 @@ const schema: ConfigSchema = {
   room: {
     roomId: 0,
     enabled: true,
+    captureEnabled: true,
     minMedalLevel: 0,
     sendOnDisconnect: true,
     disconnectMessage: "先下播啦，感谢大家陪伴，我们下次见～",
@@ -130,6 +135,7 @@ const schema: ConfigSchema = {
     requestTimeoutMs: 30000,
     apiKeys: {},
   },
+  theme: "system",
 };
 
 // ─── 加密密钥派生 ──────────────────────────────────────────
@@ -242,6 +248,7 @@ export function getConfig(): ConfigSchema {
     keywords: store.get("keywords", schema.keywords),
     quickReplies: store.get("quickReplies", schema.quickReplies),
     aiModel: store.get("aiModel", schema.aiModel),
+    theme: store.get("theme", schema.theme),
   };
 }
 
@@ -315,11 +322,25 @@ function getMachineId(): string {
  * 导出配置到明文 JSON 文件（plain-v2 分组格式）。
  * 包含 __meta 元信息（格式版本、导出时间、machineId），
  * 方便用户手动编辑和跨机器迁移。
+ * @param targetPath 导出目标路径，不传则使用默认路径
+ * @param options.includeSensitive 是否包含敏感信息（API Key、B站Cookie等），默认 false
  */
-export function exportConfigToFile(targetPath?: string): { status: string; path?: string; error?: string } {
+export function exportConfigToFile(
+  targetPath?: string,
+  options?: { includeSensitive?: boolean }
+): { status: string; path?: string; error?: string } {
   try {
     const config = store.store;
     const ai = config.aiModel || {};
+    const includeSensitive = options?.includeSensitive === true;
+
+    // 脱敏处理：不包含敏感信息时清空凭证和密钥字段
+    const exportedCredentials = includeSensitive
+      ? config.credentials
+      : { sessdata: "", biliJct: "", buvid3: "" };
+    const exportedApiKey = includeSensitive ? ai.apiKey : "";
+    const exportedApiKeys = includeSensitive ? (ai.apiKeys || {}) : {};
+
     const exportPayload = {
       __meta: {
         format: "plain-v2",
@@ -328,13 +349,13 @@ export function exportConfigToFile(targetPath?: string): { status: string; path?
         machineId: getMachineId(),
       },
       room: config.room,
-      credentials: config.credentials,
+      credentials: exportedCredentials,
       keywords: config.keywords,
       quickReplies: config.quickReplies,
       aiModel: {
         // 供应商配置
         provider: ai.provider,
-        apiKey: ai.apiKey,
+        apiKey: exportedApiKey,
         modelId: ai.modelId,
         endpoint: ai.endpoint,
         ollamaBaseUrl: ai.ollamaBaseUrl,
@@ -351,7 +372,7 @@ export function exportConfigToFile(targetPath?: string): { status: string; path?
         topP: ai.topP,
         ollamaKeepAlive: ai.ollamaKeepAlive,
         requestTimeoutMs: ai.requestTimeoutMs,
-        apiKeys: ai.apiKeys,
+        apiKeys: exportedApiKeys,
       },
     };
     const configDir = store.path ? dirname(store.path) : process.cwd();

@@ -1,6 +1,7 @@
 /* ─── Global Reset & Base Styles ─── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ─── 暗色主题（默认） ─── */
 :root {
   --bg-primary: #1a1b26;
   --bg-secondary: #1f2030;
@@ -19,6 +20,75 @@
   --purple: #bb9af7;
   --orange: #ff9e64;
   --cyan: #7dcfff;
+  --glass-bg: transparent;
+  --glass-blur: 0px;
+  --glass-border: var(--border);
+  --sidebar-glow: #7aa2f733;
+}
+
+/* ─── 亮色主题（毛玻璃） ─── */
+[data-theme="light"] {
+  --bg-primary: #f4f5fa;
+  --bg-secondary: rgba(255, 255, 255, 0.72);
+  --bg-tertiary: rgba(240, 242, 248, 0.85);
+  --bg-hover: rgba(225, 228, 238, 0.9);
+  --bg-active: rgba(210, 214, 228, 0.9);
+  --border: rgba(195, 200, 218, 0.6);
+  --text-primary: #1a1e36;
+  --text-secondary: #4a507a;
+  --text-muted: #8088a8;
+  --accent: #4a7af7;
+  --accent-dim: #4a7af718;
+  --success: #3aaa50;
+  --danger: #d94060;
+  --warning: #c88a28;
+  --purple: #8866e0;
+  --orange: #d87a30;
+  --cyan: #3098c8;
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-blur: 20px;
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --sidebar-glow: #4a7af722;
+}
+
+[data-theme="light"] body {
+  background: linear-gradient(135deg, #e8ecf8 0%, #dce2f0 50%, #f0e8f4 100%);
+}
+
+[data-theme="light"] .page-header,
+[data-theme="light"] .card,
+[data-theme="light"] .sidebar,
+[data-theme="light"] .titlebar {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-color: var(--glass-border);
+}
+
+[data-theme="light"] .main-area {
+  background: transparent;
+}
+
+[data-theme="light"] .btn-accent {
+  color: #ffffff;
+}
+
+[data-theme="light"] .msg-success {
+  background: #3aaa5018;
+  border-color: #3aaa5040;
+}
+
+[data-theme="light"] .msg-error {
+  background: #d9406018;
+  border-color: #d9406040;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(160, 168, 200, 0.4);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 148, 180, 0.6);
 }
 
 body {

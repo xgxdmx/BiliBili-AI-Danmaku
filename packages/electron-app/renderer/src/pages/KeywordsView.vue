@@ -62,6 +62,8 @@ onMounted(async () => {
       ignoreUsersText.value = names.join("\n");
     }
     minMedalLevel.value = Number(config?.room?.minMedalLevel || 0);
+    // 读取捕捉开关状态（默认 true）
+    captureEnabled.value = config?.room?.captureEnabled !== false;
     if (Array.isArray(config?.quickReplies) && config.quickReplies.length > 0) {
       quickReplies.value = [...config.quickReplies];
     }
@@ -104,6 +106,16 @@ async function saveIgnoreUsers() {
     }, 1800);
   } catch (e) {
     ignoreError.value = "保存失败: " + String(e);
+  }
+}
+
+// 切换弹幕捕捉开关，持久化到配置文件
+async function toggleCapture() {
+  try {
+    await window.danmakuAPI?.setConfig("room.captureEnabled", captureEnabled.value);
+  } catch {
+    // 持久化失败时回滚 UI
+    captureEnabled.value = !captureEnabled.value;
   }
 }
 
@@ -263,10 +275,10 @@ async function toggleQuickReply(id: string) {
 <template>
   <div class="page">
     <div class="page-header">
-      <h2 class="page-title">关键词</h2>
+      <h2 class="page-title">关键词匹配</h2>
       <label class="switch-row">
         <span class="switch-label">捕捉开关</span>
-        <input v-model="captureEnabled" type="checkbox" class="switch-input" />
+        <input v-model="captureEnabled" type="checkbox" class="switch-input" @change="toggleCapture" />
         <span class="switch-track" :class="{ on: captureEnabled }">
           <span class="switch-thumb"></span>
         </span>

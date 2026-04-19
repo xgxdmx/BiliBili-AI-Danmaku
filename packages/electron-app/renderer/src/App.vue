@@ -27,7 +27,27 @@ function scheduleSave() {
   }, 2000) as any;
 }
 
-// 全局监听弹幕 - 即使切换页面也继续更新
+// ─── 主题管理 ──────────────────────────────────────────────
+
+/** 将解析后的主题应用到 DOM 根节点 */
+function applyTheme(resolved: "light" | "dark"): void {
+  document.documentElement.setAttribute("data-theme", resolved);
+}
+
+// 启动时加载主题
+onMounted(async () => {
+  try {
+    const result = await window.danmakuAPI?.getTheme();
+    if (result) applyTheme(result.resolved);
+  } catch { /* 忽略 */ }
+
+  // 监听主题变更（系统主题变化或用户手动切换）
+  window.danmakuAPI?.onThemeChanged?.((resolved) => {
+    applyTheme(resolved);
+  });
+});
+
+// ─── 弹幕缓存 ──────────────────────────────────────────────
 onMounted(() => {
   window.addEventListener("beforeunload", () => {
     saveCache(globalSourceDanmaku.value, globalMatchedDanmaku.value);
@@ -91,11 +111,11 @@ const isActive = (path: string) => {
 };
 
 const navItems = [
-  { path: "/", label: "弹幕", icon: "message" },
+  { path: "/", label: "弹幕监控", icon: "message" },
   { path: "/room", label: "直播间", icon: "tv" },
-  { path: "/keywords", label: "关键词", icon: "tag" },
-  { path: "/models", label: "大模型", icon: "ai" },
-  { path: "/dev", label: "开发", icon: "settings" },
+  { path: "/keywords", label: "关键词匹配", icon: "tag" },
+  { path: "/models", label: "大模型配置", icon: "ai" },
+  { path: "/dev", label: "配置", icon: "settings" },
   { path: "/about", label: "关于", icon: "about" },
 ];
 
@@ -103,7 +123,7 @@ const icons: Record<string, string> = {
   message: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
   tv: "M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7zm9 11v2m-4 0h8",
   tag: "M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0L22 12V2H12z",
-  ai: "M3 20h4.2l.8-3h4l.8 3H17l-3.8-16H6.8L3 20Zm6-6 1.2-5h1.6l1.2 5ZM20 4h4v16h-4z",
+  ai: "M1 20h4.2l.8-3h4l.8 3H15l-3.8-16H4.8L1 20Zm6-6 1.2-5h1.6l1.2 5ZM18 4h4v16h-4z",
   settings: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   about: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
 };
@@ -192,13 +212,13 @@ const icons: Record<string, string> = {
   margin-bottom: 12px;
   border-radius: 8px;
   transition: background 0.15s, color 0.15s, box-shadow 0.2s;
-  box-shadow: 0 0 14px #7aa2f733;
+  box-shadow: 0 0 14px var(--sidebar-glow);
 }
 
 .sidebar-logo:hover {
   background: var(--bg-hover);
   color: #c5d4ff;
-  box-shadow: 0 0 18px #7aa2f755;
+  box-shadow: 0 0 18px var(--sidebar-glow);
 }
 
 .dream-icon {
@@ -210,7 +230,7 @@ const icons: Record<string, string> = {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding: 4px 0;
 }
 
@@ -219,7 +239,7 @@ const icons: Record<string, string> = {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .nav-divider {
