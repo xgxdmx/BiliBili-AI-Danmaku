@@ -1,19 +1,31 @@
 // ============================================================
 // Electron Main Process
+//
+// 职责：
+//   1. 创建 BrowserWindow（主窗口 + B站登录窗口）
+//   2. 注册全部 IPC handlers（弹幕、关键词、配置、AI、Ollama）
+//   3. 管理子模块生命周期（DanmakuService / AIRelay / QuickReply）
+//   4. 进程退出清理（SIGINT / SIGTERM / window-all-closed）
 // ============================================================
 
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join } from "path";
 import { DanmakuService } from "./danmaku-service";
-import { getConfig, setConfig, setConfigPath, exportConfigToFile, importConfigFromFile, importConfigFromContent } from "./config-store";
+import { getConfig, setConfigPath, exportConfigToFile, importConfigFromFile, importConfigFromContent } from "./config-store";
 import { AIRelayManager, type AIRelayStatus } from "./ai-relay";
 import { QuickReplyEngine } from "./quick-reply-engine";
 import { logger } from "./logger";
 
+/** B站登录页地址，用于弹出独立登录窗口 */
 const BILI_LOGIN_URL = "https://passport.bilibili.com/login";
 
+/** B站登录子窗口引用（同一时刻只允许一个） */
 let biliLoginWindow: BrowserWindow | null = null;
 
+/**
+ * 从 Electron session 中提取 B站登录 Cookie。
+ * 在登录窗口 cookie 变更时调用，自动抓取 SESSDATA / bili_jct / buvid3。
+ */
 async function getCredentialCookiesFromElectronSession(targetWin: BrowserWindow): Promise<{
   sessdata: string;
   biliJct: string;
@@ -30,10 +42,18 @@ async function getCredentialCookiesFromElectronSession(targetWin: BrowserWindow)
 }
 
 
+// ─── 全局状态 ──────────────────────────────────────────────
+
+/** 主窗口引用 */
 let mainWindow: BrowserWindow | null = null;
+/** Python 弹幕子进程管理 */
 let danmakuService: DanmakuService | null = null;
+/** AI 大模型中继管理器 */
 let aiRelay: AIRelayManager | null = null;
+/** 固定回复引擎 */
 let quickReplyEngine: QuickReplyEngine | null = null;
+
+/** AI 连接状态缓存（窗口未创建时 IPC 仍可返回） */
 let latestAIStatus: AIRelayStatus = {
   connected: false,
   provider: "",
@@ -51,8 +71,10 @@ let latestAIStatus: AIRelayStatus = {
   recentDecisions: [],
 };
 
+/** 防止重复清理（cleanupBeforeExit 可能被多个退出信号同时触发） */
 let isCleanupRunning = false;
 
+/** 应用退出前清理：停止弹幕服务 → 断开 AI → 关闭登录窗口 */
 async function cleanupBeforeExit(): Promise<void> {
   if (isCleanupRunning) return;
   isCleanupRunning = true;
@@ -78,6 +100,7 @@ async function cleanupBeforeExit(): Promise<void> {
   }
 }
 
+/** 创建主 BrowserWindow，配置预加载脚本和安全策略 */
 function createWindow(): void {
   logger.log("Creating window, dev:", logger.isDev);
 
@@ -132,12 +155,20 @@ function createWindow(): void {
   });
 }
 
+/**
+ * 注册全部 IPC handlers。
+ * 按功能分为：弹幕服务 / 关键词 / 固定回复 / 配置 / 登录 / AI / Ollama。
+ */
 function registerIpcHandlers(): void {
+  // ─── 工具函数 ──────────────────────────────────────────────
+
+  /** 统一用户名归一化（trim + lowercase），用于忽略列表匹配 */
   const normalizeUsername = (name: string): string =>
     String(name || "")
       .trim()
       .toLowerCase();
 
+  /** 检查用户名是否在 AI 忽略列表中 */
   const shouldIgnoreByUsername = (username: string): boolean => {
     const list = getConfig().aiModel?.ignoreUsernames || [];
     const normalized = normalizeUsername(username);
@@ -145,14 +176,17 @@ function registerIpcHandlers(): void {
     return list.some((item) => normalizeUsername(item) === normalized);
   };
 
-  const disconnectAIWhenDanmakuStops = (reason: string): void => {
+  /** 弹幕连接断开时同步断开 AI 中继 */
+  const disconnectAIWhenDanmakuStops = (): void => {
     if (!aiRelay) return;
-    const status = aiRelay.getStatus();
-    if (!status.connected) return;
+    if (!aiRelay.getStatus().connected) return;
     aiRelay.disconnect();
     latestAIStatus = aiRelay.getStatus();
   };
 
+  // ─── 初始化子模块 ─────────────────────────────────────────
+
+  /** AI 中继管理器：连接大模型供应商，管理回复队列 */
   if (!aiRelay) {
     aiRelay = new AIRelayManager(async (msg: string) => {
       if (!danmakuService) {
@@ -166,6 +200,7 @@ function registerIpcHandlers(): void {
     });
   }
 
+  /** 固定回复引擎：关键词命中后直接发送预设文本 */
   if (!quickReplyEngine) {
     quickReplyEngine = new QuickReplyEngine();
     const initialConfig = getConfig();
@@ -174,6 +209,9 @@ function registerIpcHandlers(): void {
     }
   }
 
+  // ─── 弹幕服务 IPC ─────────────────────────────────────────
+
+  /** 启动弹幕监听：创建 DanmakuService 并绑定全部事件处理器 */
   ipcMain.handle("danmaku:start", async (_event, config) => {
     if (!danmakuService) {
       danmakuService = new DanmakuService();
@@ -254,7 +292,7 @@ danmakuService.on("danmaku", (data) => {
       });
       danmakuService.on("disconnected", (data) => {
         mainWindow?.webContents.send("danmaku:disconnected", data);
-        disconnectAIWhenDanmakuStops("danmaku service disconnected");
+        disconnectAIWhenDanmakuStops();
       });
       danmakuService.on("error", (data) => {
         mainWindow?.webContents.send("danmaku:error", data);
@@ -264,6 +302,7 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok" };
   });
 
+  /** 停止弹幕监听，可选在停止前发送告别消息 */
   ipcMain.handle("danmaku:stop", async (_event, options?: { sendBeforeStop?: boolean; message?: string }) => {
     if (danmakuService) {
       const shouldSend = Boolean(options?.sendBeforeStop);
@@ -278,20 +317,25 @@ danmakuService.on("danmaku", (data) => {
       }
       await danmakuService.stop();
     }
-    disconnectAIWhenDanmakuStops("manual danmaku stop");
+    disconnectAIWhenDanmakuStops();
     return { status: "ok" };
   });
 
+  /** 手动发送弹幕（通过 Python sender） */
   ipcMain.handle("danmaku:send", async (_event, params) => {
     if (!danmakuService) throw new Error("Danmaku service not started");
     return danmakuService.sendDanmaku(params);
   });
 
+  /** 查询弹幕服务连接状态 */
   ipcMain.handle("danmaku:getStatus", async () => {
     if (!danmakuService) return { connected: false, roomId: null };
     return danmakuService.getStatus();
   });
 
+  // ─── 关键词 & 固定回复 IPC ─────────────────────────────────
+
+  /** 更新关键词过滤规则 */
   ipcMain.handle("keywords:update", async (_event, keywords) => {
     if (danmakuService) {
       danmakuService.updateKeywords(keywords);
@@ -299,6 +343,7 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok" };
   });
 
+  /** 更新最低粉丝牌等级过滤阈值 */
   ipcMain.handle("keywords:updateMinMedalLevel", async (_event, level) => {
     const normalized = Math.max(0, Number(level || 0));
     setConfigPath("room.minMedalLevel", normalized);
@@ -308,6 +353,7 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok", minMedalLevel: normalized };
   });
 
+  /** 更新固定回复规则列表 */
   ipcMain.handle("quickReplies:update", async (_event, rules) => {
     setConfigPath("quickReplies", rules);
     if (quickReplyEngine) {
@@ -316,11 +362,25 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok" };
   });
 
-  // Config IPC handlers
+  // ─── 配置 IPC ─────────────────────────────────────────────
+
+  /** 导入配置后同步到运行时引擎 */
+  const syncConfigToEngines = (): void => {
+    if (danmakuService) {
+      danmakuService.updateKeywords(getConfig().keywords);
+      danmakuService.updateMinMedalLevel(getConfig().room?.minMedalLevel || 0);
+    }
+    if (quickReplyEngine) {
+      quickReplyEngine.updateRules(getConfig().quickReplies || []);
+    }
+  };
+
+  /** 读取完整配置 */
   ipcMain.handle("config:get", async () => {
     return getConfig();
   });
 
+  /** 按路径设置配置值（如 "aiModel.prompt"） */
   ipcMain.handle("config:set", async (_event, key: string, value: unknown) => {
     try {
       setConfigPath(key, value);
@@ -330,12 +390,12 @@ danmakuService.on("danmaku", (data) => {
     }
   });
 
+  /** 弹出文件对话框导出配置到 JSON */
   ipcMain.handle("config:export", async () => {
     const defaultPath = app.isPackaged
       ? join(app.getPath("documents"), "config-export.json")
       : join(process.cwd(), "config-export.json");
-    // @ts-ignore
-    const result = await dialog.showSaveDialog(mainWindow || undefined, {
+    const result = await dialog.showSaveDialog(mainWindow ?? undefined, {
       title: "导出配置",
       defaultPath,
       filters: [{ name: "JSON 文件", extensions: ["json"] }],
@@ -348,34 +408,27 @@ danmakuService.on("danmaku", (data) => {
     return exportConfigToFile(result.filePath);
   });
 
+  /** 从文件路径导入配置 */
   ipcMain.handle("config:import", async (_event, filePath: string) => {
     const result = importConfigFromFile(filePath);
-    if (result.status === "ok") {
-      if (danmakuService) {
-        danmakuService.updateKeywords(getConfig().keywords);
-        danmakuService.updateMinMedalLevel(getConfig().room?.minMedalLevel || 0);
-      }
-      if (quickReplyEngine) {
-        quickReplyEngine.updateRules(getConfig().quickReplies || []);
-      }
-    }
+    if (result.status === "ok") syncConfigToEngines();
     return result;
   });
 
+  /** 从 JSON 字符串导入配置（用于剪贴板粘贴） */
   ipcMain.handle("config:importContent", async (_event, content: string) => {
     const result = importConfigFromContent(content);
-    if (result.status === "ok") {
-      if (danmakuService) {
-        danmakuService.updateKeywords(getConfig().keywords);
-        danmakuService.updateMinMedalLevel(getConfig().room?.minMedalLevel || 0);
-      }
-      if (quickReplyEngine) {
-        quickReplyEngine.updateRules(getConfig().quickReplies || []);
-      }
-    }
+    if (result.status === "ok") syncConfigToEngines();
     return result;
   });
 
+  // ─── B站登录 IPC ─────────────────────────────────────────
+
+  /**
+   * 打开 B站登录窗口。窗口内嵌到 passport.bilibili.com，
+   * 监听 cookie 变化自动提取 SESSDATA / bili_jct / buvid3，
+   * 成功后自动关闭窗口并持久化凭证。
+   */
   ipcMain.handle("auth:openLoginWindow", async () => {
     if (biliLoginWindow && !biliLoginWindow.isDestroyed()) {
       biliLoginWindow.focus();
@@ -457,6 +510,9 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok", state: "opened" as const, message: "登录窗口已打开" };
   });
 
+  // ─── AI 中继 IPC ─────────────────────────────────────────
+
+  /** 连接 AI 供应商：从 config-store 读取配置 → 传入 AIRelayManager.connect() */
   ipcMain.handle("ai:connect", async () => {
     if (!aiRelay) {
       throw new Error("AI relay not ready");
@@ -473,6 +529,11 @@ danmakuService.on("danmaku", (data) => {
       maxPending: aiModel.maxPending,
       skipReplies: Array.isArray(aiModel.skipReplies) ? aiModel.skipReplies : [],
       ollamaBaseUrl: aiModel.ollamaBaseUrl,
+      maxTokens: aiModel.maxTokens,
+      temperature: aiModel.temperature,
+      topP: aiModel.topP,
+      ollamaKeepAlive: aiModel.ollamaKeepAlive,
+      requestTimeoutMs: aiModel.requestTimeoutMs,
     });
 
     const status = aiRelay.getStatus();
@@ -483,16 +544,19 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok", message: "连接成功，系统提示词已注入会话上下文" };
   });
 
+  /** 断开 AI 连接 */
   ipcMain.handle("ai:disconnect", async () => {
     aiRelay?.disconnect();
     latestAIStatus = aiRelay?.getStatus() || latestAIStatus;
     return { status: "ok" };
   });
 
+  /** 查询 AI 连接状态（队列长度、处理数、发送/跳过/失败计数等） */
   ipcMain.handle("ai:getStatus", async () => {
     return aiRelay?.getStatus() || latestAIStatus;
   });
 
+  /** 清空 AI 待发送队列 */
   ipcMain.handle("ai:clearQueue", async () => {
     if (!aiRelay) {
       return { status: "ok", cleared: 0 };
@@ -502,6 +566,7 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok", ...result };
   });
 
+  /** 清空 AI 返回预览记录 */
   ipcMain.handle("ai:clearPreview", async () => {
     if (!aiRelay) {
       return { status: "ok", cleared: 0 };
@@ -511,7 +576,12 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok", ...result };
   });
 
-  // Ollama 模型列表获取 — 渲染进程调用以动态拉取本地模型
+  // ─── Ollama IPC ────────────────────────────────────────────
+
+  /**
+   * 获取 Ollama 本地模型列表。
+   * 调用 GET /api/tags，5 秒超时，返回模型名数组。
+   */
   ipcMain.handle("ollama:listModels", async (_event, baseUrl: string) => {
     try {
       const url = baseUrl.replace(/\/+$/, "") + "/api/tags";
@@ -528,16 +598,45 @@ danmakuService.on("danmaku", (data) => {
       return { status: "error", message: err?.message || "无法连接 Ollama" };
     }
   });
+
+  // ─── OpenCode IPC ─────────────────────────────────────────
+
+  /**
+   * 获取 OpenCode Zen 可用模型列表。
+   * 调用 GET /zen/v1/models，10 秒超时，返回模型 ID 数组。
+   * 用于前端动态刷新模型下拉框。
+   */
+  ipcMain.handle("opencode:listModels", async () => {
+    try {
+      const resp = await fetch("https://opencode.ai/zen/v1/models", {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!resp.ok) {
+        return { status: "error", message: `OpenCode 返回 ${resp.status}` };
+      }
+      const data = await resp.json();
+      const models: string[] = Array.isArray(data?.data)
+        ? data.data.map((m: any) => String(m.id || ""))
+        : [];
+      return { status: "ok", models };
+    } catch (err: any) {
+      return { status: "error", message: err?.message || "无法连接 OpenCode" };
+    }
+  });
 }
 
+// ─── 应用生命周期 ──────────────────────────────────────────
+
+/** 应用就绪：隐藏菜单栏 → 创建窗口 → 注册 IPC */
 app.whenReady().then(() => {
-  // 关闭应用菜单栏（去掉“查看”等菜单）
+  // 关闭应用菜单栏（去掉"查看"等菜单）
   Menu.setApplicationMenu(null);
   
   createWindow();
   registerIpcHandlers();
 });
 
+/** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */
 app.on("window-all-closed", async () => {
   await cleanupBeforeExit();
   // 给一点时间让进程退出
@@ -545,13 +644,12 @@ app.on("window-all-closed", async () => {
   app.quit();
 });
 
+/** 退出前清理（防止资源泄露） */
 app.on("before-quit", async () => {
   await cleanupBeforeExit();
-  // 关闭前清空本地存储的弹幕缓存
-  const { session } = require("electron");
-  // 这里不需要主动清空，下次启动会自动加载空数据
 });
 
+/** 进程信号处理（Ctrl+C / kill） */
 process.on("SIGINT", () => {
   void cleanupBeforeExit().finally(() => process.exit(0));
 });
@@ -560,11 +658,13 @@ process.on("SIGTERM", () => {
   void cleanupBeforeExit().finally(() => process.exit(0));
 });
 
+/** 未捕获异常 → 记录日志 → 清理 → 非零退出 */
 process.on("uncaughtException", (err) => {
   console.error("[Main] uncaughtException:", err);
   void cleanupBeforeExit().finally(() => process.exit(1));
 });
 
+/** macOS dock 点击事件：无窗口时重新创建 */
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();

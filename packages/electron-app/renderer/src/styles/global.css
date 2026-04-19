@@ -117,6 +117,7 @@ button {
 .msg { padding: 8px 12px; border-radius: 4px; font-size: 12px; margin-top: 10px; }
 .msg-success { background: #9ece6a20; color: var(--success); border: 1px solid #9ece6a40; }
 .msg-error { background: #f7768e20; color: var(--danger); border: 1px solid #f7768e40; }
+.msg-warning { color: var(--warning); }
 .msg-inline { font-size: 12px; }
 
 /* ─── Section ─── */

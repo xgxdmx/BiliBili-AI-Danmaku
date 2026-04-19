@@ -11,6 +11,8 @@ import * as fs from "fs";
 import { logger } from "./logger";
 
 // ─── Inline Types ────────────────────────────────────────────
+// 弹幕消息、礼物消息、SC 消息和关键词规则的内联类型定义。
+// 这些类型仅在本模块内部使用，跨进程传输通过 JSON 序列化。
 
 interface DanmakuMessage {
   id: number;
@@ -61,6 +63,8 @@ interface KeywordRule {
 }
 
 // ─── Keyword Filter ──────────────────────────────────────────
+// 关键词过滤器：维护启用的规则列表和编译好的正则缓存，
+// 对每条弹幕执行子串/正则匹配，返回命中的规则和捕获组。
 
 class KeywordFilter {
   private rules: KeywordRule[] = [];
@@ -117,6 +121,8 @@ class KeywordFilter {
 }
 
 // ─── Danmaku Service ─────────────────────────────────────────
+// 弹幕服务主类：管理 Python 子进程的生命周期，
+// 通过 stdio JSON-RPC 2.0 双向通信，处理弹幕/礼物/SC 事件。
 
 interface DanmakuServiceConfig {
   roomId: number;
@@ -137,20 +143,36 @@ export class DanmakuService extends EventEmitter {
   private buffer = "";
   private _connected = false;
 
+  /**
+   * 启动弹幕服务。
+   * 流程：解析脚本路径 → 创建子进程 → 绑定事件 → 等待连接就绪 → 发送 start 请求。
+   */
   async start(config: DanmakuServiceConfig): Promise<void> {
     this.config = config;
     this.keywordFilter.updateRules(config.keywords, config.minMedalLevel ?? 0);
-
     logger.log("DanmakuService.start, roomId:", config.roomId);
 
-    // 查找脚本路径
-    let basePath: string;
-    let pythonPath: string;
+    const { scriptPath, usePython, pythonPath } = this.resolveScriptPaths();
+    logger.log("Spawning:", usePython ? pythonPath : scriptPath, "script:", scriptPath);
+    this.process = this.spawnProcess(scriptPath, usePython, pythonPath);
+    this.bindProcessEvents(this.process);
+    await this.waitForConnection();
+
+    await this.request("start", {
+      roomId: config.roomId,
+      credentials: config.credentials,
+    });
+    this._connected = true;
+  }
+
+  /** 解析 Python 脚本和解释器路径 */
+  private resolveScriptPaths(): { scriptPath: string; usePython: boolean; pythonPath: string } {
     const isDevMode = !!process.env.ELECTRON_RENDERER_URL;
     const isWin = process.platform === "win32";
+    let basePath: string;
+    let pythonPath: string;
 
     if (isDevMode || process.env.ELECTRON_RUN_AS_NODE) {
-      // Dev mode: 使用项目根目录的 .venv
       basePath = join(__dirname, "..", "..", "..", "..", "packages", "danmaku-core");
       const venvPython = isWin
         ? join(__dirname, "..", "..", "..", "..", ".venv", "Scripts", "python.exe")
@@ -166,75 +188,58 @@ export class DanmakuService extends EventEmitter {
     const exePath = join(basePath, "run.exe");
     const binPath = join(basePath, "run");
     const pyPath = join(basePath, "run.py");
-    
-    let scriptPath = exePath;
-    let usePython = false;
 
     if (!isDevMode) {
-      if (isWin && fs.existsSync(exePath)) {
-        scriptPath = exePath;
-        usePython = false;
-      } else if (!isWin && fs.existsSync(binPath)) {
-        scriptPath = binPath;
-        usePython = false;
-      } else if (fs.existsSync(pyPath)) {
-        scriptPath = pyPath;
-        usePython = true;
-      } else {
-        throw new Error("未找到 danmaku-core 脚本");
-      }
-    } else {
-      scriptPath = pyPath;
-      usePython = true;
+      if (isWin && fs.existsSync(exePath)) return { scriptPath: exePath, usePython: false, pythonPath };
+      if (!isWin && fs.existsSync(binPath)) return { scriptPath: binPath, usePython: false, pythonPath };
+      if (fs.existsSync(pyPath)) return { scriptPath: pyPath, usePython: true, pythonPath };
+      throw new Error("未找到 danmaku-core 脚本");
     }
+    return { scriptPath: pyPath, usePython: true, pythonPath };
+  }
 
-    // 构建命令
-    logger.log("Spawning:", usePython ? pythonPath : scriptPath, "script:", scriptPath);
+  /** 根据平台和脚本类型创建子进程 */
+  private spawnProcess(scriptPath: string, usePython: boolean, pythonPath: string): ChildProcess {
     if (process.platform === "win32") {
       if (usePython) {
-        this.process = spawn(pythonPath, ["-X", "utf8", scriptPath, "receiver"], {
+        return spawn(pythonPath, ["-X", "utf8", scriptPath, "receiver"], {
           stdio: ["pipe", "pipe", "pipe"],
           env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1" },
           windowsHide: true,
         });
-      } else {
-        try {
-          this.process = spawn(scriptPath, ["receiver"], {
-            stdio: ["pipe", "pipe", "pipe"],
-            windowsHide: true,
-          });
-        } catch (err: unknown) {
-          throw err;
-        }
       }
-    } else {
-      this.process = spawn(
-        usePython ? pythonPath : scriptPath,
-        usePython ? ["-X", "utf8", scriptPath, "receiver"] : ["receiver"],
-        {
+      return spawn(scriptPath, ["receiver"], {
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
+        windowsHide: true,
       });
     }
-     
+    return spawn(
+      usePython ? pythonPath : scriptPath,
+      usePython ? ["-X", "utf8", scriptPath, "receiver"] : ["receiver"],
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      },
+    );
+  }
+
+  /** 绑定子进程的 stdout/stderr/close/error 事件 */
+  private bindProcessEvents(proc: ChildProcess): void {
     let stderrData = "";
-    this.process.stdout?.on("data", (data: Buffer) => {
-      this.handleStdout(data.toString("utf-8"));
-    });
-    this.process.stderr?.on("data", (data: Buffer) => {
+    proc.stdout?.on("data", (data: Buffer) => { this.handleStdout(data.toString("utf-8")); });
+    proc.stderr?.on("data", (data: Buffer) => {
       try {
         const text = data.toString("utf-8");
         if (text.includes("unknown cmd=")) return;
         if (text.trim()) {
           stderrData += text;
-          // 实时输出 Python stderr 日志到控制台
           for (const line of text.trim().split("\n")) {
             if (line.trim()) logger.log("[Python]", line.trim());
           }
         }
       } catch {}
     });
-    this.process.on("close", (code) => {
+    proc.on("close", (code) => {
       logger.log("Python process closed, code:", code);
       this._connected = false;
       if (code !== 0 && stderrData) {
@@ -242,32 +247,22 @@ export class DanmakuService extends EventEmitter {
       }
       this.emit("disconnected", { code });
     });
-    this.process.on("error", (err) => {
-      this.emit("error", { error: err.message });
-    });
-
-    // 等待 Python 启动，最多 3 秒
-    await new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        resolve(undefined);
-      }, 3000);
-      const checkConnection = () => {
-        if (this._connected) {
-          clearTimeout(timeout);
-          resolve(undefined);
-        }
-      };
-      this.once("connected", checkConnection);
-      this.once("disconnected", () => { clearTimeout(timeout); resolve(undefined); });
-    });
-
-    await this.request("start", {
-      roomId: config.roomId,
-      credentials: config.credentials,
-    });
-    this._connected = true;
+    proc.on("error", (err) => { this.emit("error", { error: err.message }); });
   }
 
+  /** 等待 Python 进程上报连接就绪，最多 3 秒 */
+  private async waitForConnection(): Promise<void> {
+    await new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(undefined), 3000);
+      this.once("connected", () => { clearTimeout(timeout); resolve(undefined); });
+      this.once("disconnected", () => { clearTimeout(timeout); resolve(undefined); });
+    });
+  }
+
+  /**
+   * 停止弹幕服务。
+   * 流程：发送 stop 请求 → 关闭 stdin → 等待进程退出（2s）→ 强制 kill。
+   */
   async stop(): Promise<void> {
     const proc = this.process;
     if (!proc) {
@@ -312,6 +307,10 @@ export class DanmakuService extends EventEmitter {
     return this.keywordFilter.getActiveScopes();
   }
 
+  /**
+   * 发送弹幕到直播间。
+   * 将消息文本 + 凭证打包为 JSON-RPC 请求发送给 Python sender。
+   */
   async sendDanmaku(params: { msg: string; color?: number; mode?: number }): Promise<unknown> {
     return this.request("sendDanmaku", {
       ...params,
@@ -329,6 +328,13 @@ export class DanmakuService extends EventEmitter {
     };
   }
 
+  /**
+   * 处理 Python 子进程的 stdout 输出。
+   * 按行解析 JSON，支持三种协议格式：
+   *   1) JSON-RPC 2.0 response（含 id + result/error）→ 匹配 pending 请求
+   *   2) JSON-RPC 2.0 notification（含 method）→ 路由到对应事件
+   *   3) 旧协议（含 type 字段）→ 兼容处理
+   */
   private handleStdout(text: string) {
     this.buffer += text;
     const lines = this.buffer.split("\n");
@@ -414,6 +420,10 @@ this._connected = true;
     }
   }
 
+  /**
+   * 向 Python 子进程发送 JSON-RPC 请求，返回 Promise。
+   * 超时 30 秒后自动 reject 并清理 pending 条目。
+   */
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
     const id = randomUUID();
     return new Promise((resolve, reject) => {
@@ -427,6 +437,7 @@ this._connected = true;
     });
   }
 
+  /** 等待子进程退出，超时返回 false（表示进程仍在运行） */
   private async waitForProcessExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
     if (proc.exitCode !== null || proc.killed) {
       return true;
@@ -444,6 +455,11 @@ this._connected = true;
     });
   }
 
+  /**
+   * 强制终止子进程。
+   * Windows：先 process.kill(pid) 再 proc.kill(SIGKILL)
+   * Unix：先 SIGTERM，500ms 后 SIGKILL
+   */
   private forceKill(proc: ChildProcess): void {
     if (proc.exitCode !== null) return;
     if (process.platform === "win32") {

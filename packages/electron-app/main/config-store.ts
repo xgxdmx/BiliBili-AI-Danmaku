@@ -1,5 +1,11 @@
 // ============================================================
 // Config Store - 加密配置持久化
+//
+// 使用 electron-store 管理全部应用配置，支持：
+//   - AES-256-GCM 加密存储（密钥由机器指纹 + 应用信息派生）
+//   - 旧版弱密钥自动迁移（v1 → v2）
+//   - 明文 JSON 导出/导入（分组格式，方便手动编辑）
+//   - 加密导出格式（encrypted-v1，用于安全传输）
 // ============================================================
 
 import Store from "electron-store";
@@ -9,12 +15,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, unlin
 import { networkInterfaces, hostname, platform, arch } from "os";
 import { createHash, createDecipheriv } from "crypto";
 
+// ─── 类型定义 ──────────────────────────────────────────────
+
+/** B站登录凭证（SESSDATA / bili_jct / buvid3 三件套） */
 export interface Credentials {
   sessdata: string;
   biliJct: string;
   buvid3: string;
 }
 
+/** 关键词匹配规则，支持纯文本子串 / 正则两种模式 */
 export interface KeywordRule {
   id: string;
   pattern: string;
@@ -24,6 +34,7 @@ export interface KeywordRule {
   scope: "both" | "quickReply" | "ai";
 }
 
+/** 固定回复规则：命中条件后直接发送预设文本，无需等待 AI */
 export interface QuickReplyRule {
   id: string;
   enabled: boolean;
@@ -35,6 +46,7 @@ export interface QuickReplyRule {
   cooldownMs: number;
 }
 
+/** 直播间基础配置（房间号、最低粉丝牌等级、断开消息等） */
 export interface RoomConfig {
   roomId: number;
   enabled: boolean;
@@ -43,6 +55,11 @@ export interface RoomConfig {
   disconnectMessage: string;
 }
 
+/**
+ * AI 大模型配置。
+ * 当前供应商通过 provider 字段区分（opencode / ollama），
+ * apiKeys 按供应商名保存各供应商密钥，切换供应商时不会丢失。
+ */
 export interface AIModelConfig {
   provider: string;
   apiKey: string;
@@ -54,8 +71,21 @@ export interface AIModelConfig {
   ignoreUsernames: string[];
   skipReplies: string[];
   ollamaBaseUrl?: string;
+  /** 最大输出 token 数（含 thinking）。Ollama thinking 模型建议 ≥ 2048 */
+  maxTokens?: number;
+  /** 回复温度 (0~2) */
+  temperature?: number;
+  /** 核采样概率累积截断 (0~1)，与温度互补 */
+  topP?: number;
+  /** Ollama 模型保活时间，如 "5m" */
+  ollamaKeepAlive?: string;
+  /** 单次请求超时(ms)。Ollama 建议 ≥ 120000，云端 30000 */
+  requestTimeoutMs?: number;
+  /** 各供应商 API Key 映射，避免切换供应商时丢失已保存的密钥 */
+  apiKeys?: Record<string, string>;
 }
 
+/** 应用配置总结构，对应 electron-store 存储的完整 schema */
 export interface ConfigSchema {
   room: RoomConfig;
   credentials: Credentials;
@@ -64,6 +94,9 @@ export interface ConfigSchema {
   aiModel: AIModelConfig;
 }
 
+// ─── 默认值 & 常量 ──────────────────────────────────────────
+
+/** 配置 schema 默认值，新安装或字段缺失时使用 */
 const schema: ConfigSchema = {
   room: {
     roomId: 0,
@@ -90,10 +123,18 @@ const schema: ConfigSchema = {
     ignoreUsernames: [],
     skipReplies: ["NO_REPLY", "无需回复", "不需要回复", "不用回复", "不回复", "忽略", "skip", "pass"],
     ollamaBaseUrl: "http://localhost:11434",
+    maxTokens: 256,
+    temperature: 0.7,
+    topP: 1,
+    ollamaKeepAlive: "5m",
+    requestTimeoutMs: 30000,
+    apiKeys: {},
   },
 };
 
-// 获取配置目录
+// ─── 加密密钥派生 ──────────────────────────────────────────
+
+/** 获取配置文件目录：打包模式在 exe 同目录，开发模式在项目根目录 */
 function getConfigDir(): string {
   if (app.isPackaged) {
     // 打包模式：使用 exe 同目录
@@ -104,7 +145,9 @@ function getConfigDir(): string {
 }
 
 const configDir = getConfigDir();
+/** 旧版加密密钥（v1，简单字符串），仅用于迁移 */
 const LEGACY_ENCRYPTION_KEY = "danmuClaw-v1";
+/** 当前密钥版本标识，参与密钥派生 seed */
 const ENCRYPTION_KEY_VERSION = "v2";
 
 // 确保目录存在
@@ -114,6 +157,11 @@ if (!existsSync(configDir)) {
 
 // 开发/打包模式配置目录已就绪
 
+/**
+ * 基于机器指纹派生 512-bit 加密密钥。
+ * 种子 = 版本号 + 应用名 + appId + machineId + pepper，经 SHA-512 摘要。
+ * 不同机器产生的密钥不同，配置文件不可跨机使用。
+ */
 function deriveEncryptionKey(): string {
   const machineId = getMachineId();
   const appName = app.getName() || "danmuClaw";
@@ -123,6 +171,7 @@ function deriveEncryptionKey(): string {
   return createHash("sha512").update(seed).digest("hex");
 }
 
+/** 创建 electron-store 实例，指定加密密钥和是否清除损坏配置 */
 function createConfigStore(encryptionKey: string, clearInvalidConfig: boolean): Store<ConfigSchema> {
   return new Store<ConfigSchema>({
     name: "config",
@@ -133,6 +182,12 @@ function createConfigStore(encryptionKey: string, clearInvalidConfig: boolean): 
   });
 }
 
+/**
+ * 初始化配置存储，处理密钥迁移：
+ * 1. 先尝试当前强密钥（v2）打开
+ * 2. 失败则用旧密钥（v1）读取 → 备份 → 用强密钥重写
+ * 3. 都失败则创建空白配置
+ */
 function initializeStore(): Store<ConfigSchema> {
   const strongKey = deriveEncryptionKey();
 
@@ -177,6 +232,9 @@ function initializeStore(): Store<ConfigSchema> {
 
 const store = initializeStore();
 
+// ─── 公共读写 API ──────────────────────────────────────────
+
+/** 读取完整配置（各字段缺失时回退到 schema 默认值） */
 export function getConfig(): ConfigSchema {
   return {
     room: store.get("room", schema.room),
@@ -187,6 +245,7 @@ export function getConfig(): ConfigSchema {
   };
 }
 
+/** 设置顶层配置键值（类型安全） */
 export function setConfig<K extends keyof ConfigSchema>(
   key: K,
   value: ConfigSchema[K]
@@ -194,21 +253,29 @@ export function setConfig<K extends keyof ConfigSchema>(
   store.set(key, value);
 }
 
+/**
+ * 按点号路径设置配置值，如 "aiModel.prompt"、"room.roomId"。
+ * electron-store 原生支持 dot-notation 路径。
+ */
 export function setConfigPath(path: string, value: unknown): void {
-  // electron-store 支持点号路径字符串
   (store as unknown as { set: (p: string, v: unknown) => void }).set(path, value);
 }
 
+// ─── 加密导出/导入 ─────────────────────────────────────────
+
+/** 加密导出 payload 结构（AES-256-GCM 密文 + IV + AuthTag） */
 interface EncryptedExportPayload {
   iv: string;
   tag: string;
   ciphertext: string;
 }
 
+/** 从主加密密钥派生导出专用密钥（SHA-256，与主密钥隔离） */
 function deriveExportKey(): Buffer {
   return createHash("sha256").update(`${deriveEncryptionKey()}|export|v1`).digest();
 }
 
+/** 解密 AES-256-GCM 密文（用于 encrypted-v1 格式的配置导入） */
 function decryptText(payload: EncryptedExportPayload): string {
   const key = deriveExportKey();
   const iv = Buffer.from(payload.iv, "base64");
@@ -220,6 +287,11 @@ function decryptText(payload: EncryptedExportPayload): string {
   return plain.toString("utf8");
 }
 
+/**
+ * 获取本机唯一标识：收集所有非内部网卡 MAC 地址，
+ * 结合 hostname / platform / arch 经 SHA-256 摘要后截取前 24 字符。
+ * 该 ID 参与加密密钥派生，确保配置文件不可跨机解密。
+ */
 function getMachineId(): string {
   const nics = networkInterfaces();
   const macs: string[] = [];
@@ -237,18 +309,50 @@ function getMachineId(): string {
   return createHash("sha256").update(seed).digest("hex").slice(0, 24);
 }
 
-// 导出配置文件到明文 JSON 文件
+// ─── 文件导出/导入 ─────────────────────────────────────────
+
+/**
+ * 导出配置到明文 JSON 文件（plain-v2 分组格式）。
+ * 包含 __meta 元信息（格式版本、导出时间、machineId），
+ * 方便用户手动编辑和跨机器迁移。
+ */
 export function exportConfigToFile(targetPath?: string): { status: string; path?: string; error?: string } {
   try {
     const config = store.store;
+    const ai = config.aiModel || {};
     const exportPayload = {
       __meta: {
-        machineId: getMachineId(),
+        format: "plain-v2",
+        appName: "BiliBili弹幕Claw",
         exportedAt: new Date().toISOString(),
-        appName: "danmuClaw",
-        format: "plain-v1",
+        machineId: getMachineId(),
       },
-      ...config,
+      room: config.room,
+      credentials: config.credentials,
+      keywords: config.keywords,
+      quickReplies: config.quickReplies,
+      aiModel: {
+        // 供应商配置
+        provider: ai.provider,
+        apiKey: ai.apiKey,
+        modelId: ai.modelId,
+        endpoint: ai.endpoint,
+        ollamaBaseUrl: ai.ollamaBaseUrl,
+        // 提示词
+        prompt: ai.prompt,
+        // 回复行为
+        sendIntervalMs: ai.sendIntervalMs,
+        maxPending: ai.maxPending,
+        ignoreUsernames: ai.ignoreUsernames,
+        skipReplies: ai.skipReplies,
+        // 模型参数
+        maxTokens: ai.maxTokens,
+        temperature: ai.temperature,
+        topP: ai.topP,
+        ollamaKeepAlive: ai.ollamaKeepAlive,
+        requestTimeoutMs: ai.requestTimeoutMs,
+        apiKeys: ai.apiKeys,
+      },
     };
     const configDir = store.path ? dirname(store.path) : process.cwd();
     const exportPath = targetPath || join(configDir, 'config-export.json');
@@ -259,7 +363,7 @@ export function exportConfigToFile(targetPath?: string): { status: string; path?
   }
 }
 
-// 导入配置文件从明文 JSON 文件
+/** 从文件路径导入配置（自动识别 plain-v2 和 encrypted-v1 格式） */
 export function importConfigFromFile(filePath: string): { status: string; error?: string } {
   try {
     const content = readFileSync(filePath, 'utf-8');
@@ -269,6 +373,12 @@ export function importConfigFromFile(filePath: string): { status: string; error?
   }
 }
 
+/**
+ * 从 JSON 字符串导入配置。
+ * 支持两种格式：
+ *   - plain-v2：直接 JSON，按字段验证后写入 store
+ *   - encrypted-v1：先 AES-256-GCM 解密，再按 plain 格式处理
+ */
 export function importConfigFromContent(content: string): { status: string; error?: string } {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Imported config structure is dynamic
