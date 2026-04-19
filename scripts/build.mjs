@@ -30,9 +30,10 @@
  */
 
 import { execSync } from 'child_process';
-import { existsSync, rmSync, copyFileSync, mkdirSync } from 'fs';
+import { existsSync, rmSync, readdirSync, copyFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  平台检测                                                         ║
@@ -55,6 +56,11 @@ const ROOT          = join(__dirname, '..');                        // 项目根
 const DANMAKU_CORE  = join(ROOT, 'packages', 'danmaku-core');      // Python 弹幕核心
 const ELECTRON_APP  = join(ROOT, 'packages', 'electron-app');      // Electron 桌面客户端
 const SHARED        = join(ROOT, 'packages', 'shared');             // 共享类型定义
+
+// 从 electron-app/package.json 读取包名和版本，避免硬编码
+const electronPkg = JSON.parse(readFileSync(join(ELECTRON_APP, 'package.json'), 'utf8'));
+const PKG_NAME = electronPkg.name || 'bilibili-danmu-claw-electron-app';
+const PKG_VERSION = electronPkg.version || '0.0.0';
 
 /**
  * 获取 venv 中的 Python 路径
@@ -203,9 +209,19 @@ function clean() {
     if (existsSync(bin)) { logInfo(`Delete ${bin}`); rmSync(bin, { force: true }); }
   }
 
-  // 清理 pnpm pack 生成的 .tgz（与我们的构建无关）
-  const tgz = join(ROOT, 'bilibili-danmaku-claw-0.1.0.tgz');
-  if (existsSync(tgz)) rmSync(tgz, { force: true });
+  // 清理 pnpm pack 生成的 .tgz（根目录 + packages/ 下）
+  for (const dir of [ROOT, ELECTRON_APP]) {
+    try {
+      const files = readdirSync(dir);
+      for (const f of files) {
+        if (f.endsWith('.tgz')) {
+          const tgz = join(dir, f);
+          logInfo(`Delete ${tgz}`);
+          rmSync(tgz, { force: true });
+        }
+      }
+    } catch { /* 目录不存在则跳过 */ }
+  }
 
   logOk('Clean done');
 }

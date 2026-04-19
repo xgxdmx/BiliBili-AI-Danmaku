@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.bilibili.danmu-claw",
-    "productName": "BiliBili弹幕Claw",
+    "productName": "BiliBili AI弹幕姬",
     "directories": {
       "output": "../../../dist"
     },
@@ -43,13 +43,14 @@
       "category": "public.app-category.utilities"
     },
     "portable": {
-      "artifactName": "BiliBili弹幕Claw-${version}.exe"
+      "artifactName": "BiliBili AI弹幕姬.exe"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": null,
-      "shortcutName": "bilibili-danmu-claw"
+      "shortcutName": "bilibili-danmu-claw",
+      "include": "build/uninstaller.nsh"
     },
     "files": [
       "out/**/*"

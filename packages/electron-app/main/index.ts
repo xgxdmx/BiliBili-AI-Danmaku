@@ -243,7 +243,7 @@ danmakuService.on("danmaku", (data) => {
           quickReplyEligible = true;
         }
 
-        if (quickReplyEligible) {
+        if (quickReplyEligible && getConfig().quickRepliesEnabled !== false) {
           const quickMatch = quickReplyEngine?.match(content);
           if (quickMatch && danmakuService) {
             danmakuService.sendDanmaku({ msg: quickMatch.reply }).catch(() => {});

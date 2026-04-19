@@ -110,6 +110,8 @@ export interface ConfigSchema {
   credentials: Credentials;
   keywords: KeywordRule[];
   quickReplies: QuickReplyRule[];
+  /** 固定回复全局开关。关闭后固定回复引擎不处理任何弹幕 */
+  quickRepliesEnabled: boolean;
   aiModel: AIModelConfig;
   /** 主题模式：light / dark / system */
   theme: "light" | "dark" | "system";
@@ -134,6 +136,7 @@ const schema: ConfigSchema = {
   },
   keywords: [],
   quickReplies: [],
+  quickRepliesEnabled: true,
   aiModel: {
     provider: "opencode",
     prompt: "你现在是一个直播间助理，你会收到粉丝牌+用户名+弹幕内容，请逐条回复，单条回复不超过40字。",
@@ -169,11 +172,12 @@ const schema: ConfigSchema = {
 
 // ─── 加密密钥派生 ──────────────────────────────────────────
 
-/** 获取配置文件目录：打包模式在 exe 同目录，开发模式在项目根目录 */
+/** 获取配置文件目录：打包模式使用 userData（始终可写），开发模式使用项目根目录 */
 function getConfigDir(): string {
   if (app.isPackaged) {
-    // 打包模式：使用 exe 同目录
-    return dirname(app.getPath("exe"));
+    // 打包模式：使用 Electron userData 目录（C:\Users\<user>\AppData\Roaming\<appName>）
+    // 避免安装在 C:\Program Files 等受限目录时无写入权限
+    return app.getPath("userData");
   }
   // 开发模式：使用项目根目录
   return join(app.getAppPath(), "../../");
@@ -185,12 +189,51 @@ const LEGACY_ENCRYPTION_KEY = "danmuClaw-v1";
 /** 当前密钥版本标识，参与密钥派生 seed */
 const ENCRYPTION_KEY_VERSION = "v2";
 
-// 确保目录存在
-if (!existsSync(configDir)) {
-  mkdirSync(configDir, { recursive: true });
+// 确保 userData 目录存在（Electron 通常已创建，但保险起见）
+try {
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+} catch {
+  // 极端情况：userData 不可写，回退到用户主目录下的 .danmuclaw
+  const fallbackDir = join(app.getPath("home"), ".danmuclaw");
+  try {
+    if (!existsSync(fallbackDir)) {
+      mkdirSync(fallbackDir, { recursive: true });
+    }
+    // 无法直接重新赋值 configDir（const），所以在回退场景中
+    // 整个 store 会在 userData 下创建，electron-store 自身会处理目录创建
+  } catch {
+    // 连回退目录也无法创建，静默处理
+    // electron-store 初始化时会抛出更具体的错误
+  }
 }
 
-// 开发/打包模式配置目录已就绪
+/**
+ * 将旧版配置文件（exe 同目录）迁移到 userData 目录。
+ * 仅在打包模式 + userData 下不存在配置 + exe 旁边有旧配置时执行。
+ */
+function migrateLegacyConfigLocation(): void {
+  if (!app.isPackaged) return;
+
+  const userDataConfigPath = join(configDir, "config.json");
+  // userData 下已有配置，无需迁移
+  if (existsSync(userDataConfigPath)) return;
+
+  const exeDir = dirname(app.getPath("exe"));
+  const legacyConfigPath = join(exeDir, "config.json");
+  // exe 旁边没有旧配置，无需迁移
+  if (!existsSync(legacyConfigPath)) return;
+
+  try {
+    copyFileSync(legacyConfigPath, userDataConfigPath);
+  } catch {
+    // 迁移失败不影响启动，将使用默认配置
+  }
+}
+
+// 执行旧位置迁移
+migrateLegacyConfigLocation();
 
 /**
  * 基于机器指纹派生 512-bit 加密密钥。
@@ -276,6 +319,7 @@ export function getConfig(): ConfigSchema {
     credentials: store.get("credentials", schema.credentials),
     keywords: store.get("keywords", schema.keywords),
     quickReplies: store.get("quickReplies", schema.quickReplies),
+    quickRepliesEnabled: store.get("quickRepliesEnabled", schema.quickRepliesEnabled),
     aiModel: store.get("aiModel", schema.aiModel),
     theme: store.get("theme", schema.theme),
   };

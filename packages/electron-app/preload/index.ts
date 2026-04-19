@@ -96,6 +96,8 @@ export interface ConfigSchema {
   credentials: Credentials;
   keywords: KeywordRule[];
   quickReplies: QuickReplyRule[];
+  /** 固定回复全局开关 */
+  quickRepliesEnabled: boolean;
   openClaw: OpenClawConfig;
   aiModel: AIModelConfig;
   /** 主题模式：light / dark / system */
