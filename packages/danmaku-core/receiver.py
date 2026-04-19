@@ -15,9 +15,6 @@ import inspect
 import time
 from typing import Any, Callable, Optional
 
-import data
-import self
-
 # 强制使用 UTF-8 编码
 os.environ["PYTHONUTF8"] = "1"
 
@@ -169,65 +166,6 @@ class BilibiliDanmakuClient:
         self._credentials: dict = {}
         self._connected = False
         self._session: Optional[aiohttp.ClientSession] = None
-
-    def _parse_danmaku(self, message: DanmakuMessage) -> dict:
-        return {
-            "id": int(message.timestamp * 1000000) if message.timestamp else 0,  # 用时间戳作为ID
-            "content": message.msg,
-            "sender": {
-                "uid": message.uid,
-                "username": message.uname,
-                "is_admin": message.admin,
-                "is_vip": message.vip,
-                "medal": {
-                    "name": message.medal_name,
-                    "level": message.medal_level,
-                    "color": getattr(message, "medal_color", None),
-                } if message.medal_name else None,
-            },
-            "timestamp": message.timestamp * 1000 if message.timestamp < 1e12 else message.timestamp,
-            "roomId": self._room_id,
-            "color": int(message.color) if message.color else 16777215,
-            "mode": message.mode,
-        }
-
-    def _parse_gift(self, gift: GiftMessage) -> dict:
-        return {
-            "giftId": gift.gift_id,
-            "giftName": gift.gift_name,
-            "count": gift.num,
-            "coinType": "gold" if gift.coin_type == "gold" else "silver",
-            "totalPrice": gift.total_coin,
-            "sender": {
-                "uid": gift.uid,
-                "username": gift.uname,
-                "is_admin": False,
-                "is_vip": False,
-                "medal": None,
-            },
-            "roomId": self._room_id,
-            "timestamp": gift.timestamp * 1000 if gift.timestamp < 1e12 else gift.timestamp,
-        }
-
-    def _parse_super_chat(self, sc: SuperChatMessage) -> dict:
-        return {
-            "id": sc.id,
-            "content": sc.message,
-            "price": sc.price,
-            "sender": {
-                "uid": sc.uid,
-                "username": sc.uname,
-                "is_admin": False,
-                "is_vip": sc.user_info.privilege_type > 0 if sc.user_info else False, # type: ignore
-                "medal": {
-                    "name": sc.medal_info.medal_name, # type: ignore
-                    "level": sc.medal_info.medal_level, # type: ignore
-                    "color": sc.medal_info.medal_color, # pyright: ignore[reportAttributeAccessIssue]
-                } if sc.medal_info else None, # type: ignore
-            },
-            "roomId": self._room_id,
-            "timestamp": int(sc.start_time * 1000) if sc.start_time else 0,
-        }
 
     async def start(self, params: dict) -> dict:
         room_id = params.get("roomId")
@@ -458,7 +396,8 @@ class _DanmakuHandler:
         return None
 
     def set_client(self, client):
-        self._client = client
+        """设置 blivedm 客户端引用（blivedm 回调接口要求）"""
+        self.client = client
 
     def handle(self, client, command):
         """直接处理所有命令 - 修复 blivedm 的异步回调 bug"""
@@ -538,7 +477,6 @@ class _DanmakuHandler:
         medal_data = self._extract_medal(command, {"medal": data_payload.get("medal_info")}, [])
         ts = int(time.time() * 1000)
         self._danmaku_count += 1
-        import asyncio
         asyncio.create_task(self.client.rpc.send_notification("danmaku.gift", {
             "giftId": data_payload.get("giftId", 0),
             "giftName": data_payload.get("giftName", ""),
@@ -546,8 +484,8 @@ class _DanmakuHandler:
             "coinType": "gold" if str(data_payload.get("coin_type", "gold")).lower() == "gold" else "silver",
             "totalPrice": data_payload.get("total_coin", 0),
             "sender": {
-                "uid": data.get("uid", 0),
-                "username": data.get("uname", ""),
+                "uid": data_payload.get("uid", 0),
+                "username": data_payload.get("uname", ""),
                 "is_admin": False,
                 "is_vip": False,
                 "medal": medal_data,
@@ -616,8 +554,6 @@ class DanmakuSender:
             "mode": mode,
             "rnd": int(time.time()),
             "bubble": 0,
-            "fontsize": 25,
-            "msg_type": 1,
             "fontsize": 25,
             "msg_type": 1,
         }

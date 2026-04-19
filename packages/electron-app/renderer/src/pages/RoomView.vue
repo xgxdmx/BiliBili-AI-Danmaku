@@ -402,13 +402,18 @@ async function openPopupLogin() {
     </div>
 
     <div class="card">
-      <h3 class="card-title">使用说明</h3>
+      <h3 class="card-title">B站连接使用说明</h3>
       <div class="help-text">
-        <p>1. 先点「弹出B站登录页」扫码登录，自动写入 SESSDATA / bili_jct（也可手动粘贴 Cookie）。</p>
-        <p>2. 在「关键词」页面设置匹配规则，决定哪些弹幕进入匹配队列。</p>
-        <p>3. 在「大模型配置」里先保存供应商、模型、API Key 和提示词，再点击「开始连接」。</p>
-        <p>4. 回到本页输入房间号，点击「开始监听」；监听成功后会在「弹幕监控」看到源弹幕与匹配弹幕。</p>
-        <p>5. 点击「停止监听」可随时断开直播间，模型连接可在「大模型配置」单独断开。</p>
+        <ul>
+          扫码登录：
+          <li>单击“弹出B站登录页”按钮，使用Bilibili移动版APP进行扫码登录。</li>
+        </ul>
+        <ul>
+          浏览器Cookie登录：
+          <li>打开浏览器登录B站</li>
+          <li>打开F12开发者工具，点击网络（Network）标签页，单击Fetch/XHR过滤器</li>
+          <li>刷新B站，在F12开发者工具里可以看见许多请求项，找到标头（Headers）内请求标头（Request Headers）含有Cookie的数据项，并复制Cookie全部内容到工具输入框内</li>
+        </ul>
       </div>
     </div>
   </div>

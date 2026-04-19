@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['packages\\danmaku-core\\run.py'],
+    ['packages/danmaku-core/run.py'],
     pathex=[],
     binaries=[],
     datas=[],

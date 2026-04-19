@@ -1,9 +1,9 @@
 {
   "name": "bilibili-danmu-claw-electron-app",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "BiliBili直播弹幕监听与AI自动回复工具",
-  "author": "BiliBiliDanmakuClaw",
+  "description": "BiliBili AI弹幕姬",
+  "author": "xgxdmx",
   "productName": "bilibili-danmu-claw",
   "main": "./out/main/index.js",
   "scripts": {
@@ -20,7 +20,7 @@
     "appId": "com.bilibili.danmu-claw",
     "productName": "BiliBili弹幕Claw",
     "directories": {
-      "output": "dist/build"
+      "output": "../../../dist"
     },
     "win": {
       "target": [
@@ -39,6 +39,7 @@
         "dmg",
         "zip"
       ],
+      "icon": "build/icon.svg",
       "category": "public.app-category.utilities"
     },
     "portable": {
@@ -57,7 +58,7 @@
       {
         "from": "../danmaku-core",
         "to": "danmaku-core",
-        "filter": ["**/*", "!build/**", "!dist/**", "!*.spec", "!__pycache__/**"]
+        "filter": ["**/*", "!build/**", "!dist/**", "!*.spec", "!__pycache__/**", "!*.py", "!requirements.txt"]
       },
       {
         "from": "build",

@@ -36,8 +36,9 @@ packages/danmaku-core/receiver.exe
 packages/danmaku-core/run.exe
 packages/danmaku-core/sender.exe
 
-# scripts
-/scripts
+# scripts（排除 read-config.js 用于本地调试）
+!/scripts
+scripts/read-config.js
 
 # Electron / electron-builder
 release/

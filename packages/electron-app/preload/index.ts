@@ -53,6 +53,19 @@ export interface AIModelConfig {
   maxPending: number;
   ignoreUsernames: string[];
   skipReplies: string[];
+  ollamaBaseUrl?: string;
+  /** 最大输出 token 数（含 thinking）。Ollama thinking 模型建议 ≥ 2048 */
+  maxTokens?: number;
+  /** 回复温度 (0~2) */
+  temperature?: number;
+  /** 核采样概率累积截断 (0~1)，与温度互补 */
+  topP?: number;
+  /** Ollama 模型保活时间，如 "5m" */
+  ollamaKeepAlive?: string;
+  /** 单次请求超时(ms)。Ollama 建议 ≥ 120000，云端 API 30000 即可 */
+  requestTimeoutMs?: number;
+  /** 各供应商 API Key 映射，避免切换供应商时丢失已保存的密钥 */
+  apiKeys?: Record<string, string>;
 }
 
 export interface AIConnectionStatus {
@@ -115,6 +128,8 @@ export interface DanmakuAPI {
   clearAIQueue: () => Promise<{ status: string; cleared: number }>;
   clearAIPreview: () => Promise<{ status: string; cleared: number }>;
   onAIStatus: (callback: (data: AIConnectionStatus) => void) => () => void;
+  fetchOllamaModels: (baseUrl: string) => Promise<{ status: string; models?: string[]; message?: string }>;
+  fetchOpenCodeModels: () => Promise<{ status: string; models?: string[]; message?: string }>;
   onDanmaku: (callback: (data: unknown) => void) => () => void;
   onGift: (callback: (data: unknown) => void) => () => void;
   onSuperChat: (callback: (data: unknown) => void) => () => void;
@@ -138,7 +153,7 @@ const api: DanmakuAPI = {
   importConfigContent: (content) => ipcRenderer.invoke("config:importContent", content),
   openBiliLogin: () => ipcRenderer.invoke("auth:openLoginWindow"),
   onLoginStatus: (callback) => {
-    const handler = (_event: unknown, data: { state?: string; message?: string; credentials?: Credentials }) => callback(data);
+    const handler = (_event: unknown, data: { state?: "opened" | "closed" | "confirmed"; message?: string; credentials?: Credentials }) => callback(data);
     ipcRenderer.on("auth:loginStatus", handler);
     return () => ipcRenderer.removeListener("auth:loginStatus", handler);
   },
@@ -147,6 +162,8 @@ const api: DanmakuAPI = {
   getAIStatus: () => ipcRenderer.invoke("ai:getStatus"),
   clearAIQueue: () => ipcRenderer.invoke("ai:clearQueue"),
   clearAIPreview: () => ipcRenderer.invoke("ai:clearPreview"),
+  fetchOllamaModels: (baseUrl: string) => ipcRenderer.invoke("ollama:listModels", baseUrl),
+  fetchOpenCodeModels: () => ipcRenderer.invoke("opencode:listModels"),
   onAIStatus: (callback) => {
     const handler = (_event: unknown, data: AIConnectionStatus) => callback(data);
     ipcRenderer.on("ai:status", handler);

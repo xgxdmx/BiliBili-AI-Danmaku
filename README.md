@@ -19,29 +19,32 @@
 
 - 🔴 **实时弹幕监听** — 基于 B站 WebSocket 协议，毫秒级接收弹幕、🎁礼物、💎SC
 - 🎯 **关键词/正则匹配** — 支持纯文本、正则两种匹配模式，可配置大小写敏感和匹配范围（固定回复 / AI / 两者皆可）
-- 🤖 **大模型回复** — 对接 OpenAI 兼容 API，支持自定义 Prompt、发送间隔、队列上限、跳过规则
+- 🤖 **大模型回复** — 对接 OpenAI 兼容 API + 本地 Ollama，支持自定义 Prompt、发送间隔、队列上限、跳过规则
 - ⚡ **固定回复引擎** — 关键词命中后直接发送预设回复，低延迟无需等待 AI
 - 🔑 **B站一键登录** — 内置 B站扫码登录弹窗，自动提取 Cookie，无需手动复制
 - 🔒 **配置加密持久化** — 凭证本地加密存储，支持导出/导入配置文件
 - 📊 **弹幕监控面板** — 实时弹幕流、匹配命中列表、AI 队列状态一目了然
+- ℹ️ **关于界面** — 展示版本、作者、构建时间等信息
 
 ## 🏗️ 架构概览
 
 ```
 📺 B站直播间 ──WebSocket──> 🐍 Python 弹幕核心 ──stdio──> ⚡ Electron 主进程
-                                           │
+                                            │
                               ┌────────────┼────────────┐
                               ▼            ▼            ▼
                           🎯 关键词    ⚡固定回复    🤖 AI 中继
                               │            │            │
                               │            └─────┬──────┘
                               │                  ▼
-                              │           🌐 OpenAI API
+                              │          ┌───────┴───────┐
+                              │          ▼               ▼
+                              │    🌐 OpenAI API    🐳 Ollama (本地)
                               │
                               └──────────────> 📤 弹幕回复
-                                                  ▲
-                                                  │
-                                         🎨 Vue 3 GUI ──┘
+                                                   ▲
+                                                   │
+                                          🎨 Vue 3 GUI ──┘
 ```
 
 **核心数据流：**
@@ -150,19 +153,19 @@ pnpm build
 
 ```bash
 # 🎁 完整打包 (Python EXE + Electron 安装包)
-pnpm pack
+pnpm package
 
 # 🐍 只打包 Python 部分
-pnpm pack:python
+pnpm package:python
 
 # ⚡ 只打包 Electron 部分
-pnpm pack:electron
+pnpm package:electron
 
 # 🧹 清理构建产物
-pnpm pack:clean
+pnpm package:clean
 ```
 
-> 打包脚本使用 PowerShell 编写。Windows 用户直接运行即可；macOS/Linux 用户需先安装 PowerShell (`brew install powershell` 或参考官方文档)，然后执行相同命令。
+> 打包脚本基于 Node.js (`scripts/build.mjs`)，跨平台支持 Windows/macOS/Linux。
 
 ## ⚙️ 配置说明
 
@@ -204,14 +207,15 @@ pnpm pack:clean
     { "contains": ["签到"], "reply": "感谢签到～", "cooldownMs": 5000 }
   ],
   "aiModel": {
-    "provider": "opencode",     // 🤖 或自定义 OpenAI 兼容端点
+    "provider": "opencode",     // 🤖 opencode / ollama
     "apiKey": "sk-***",
     "modelId": "minimax-m2.5-free",
     "endpoint": "https://opencode.ai/zen/v1/chat/completions",
+    "ollamaBaseUrl": "http://localhost:11434",  // 仅 ollama 需要
     "prompt": "你是一个直播间助理，逐条回复，单条不超过40字。",
     "sendIntervalMs": 1800,     // ⏱️ 发送间隔 (防风控)
-    "maxPending": 100,           // 📊 队列上限
-    "ignoreUsernames": [],       // 🙈 忽略的用户名列表
+    "maxPending": 100,          // 📊 队列上限
+    "ignoreUsernames": [],      // 🙈 忽略的用户名列表
     "skipReplies": ["NO_REPLY", "无需回复", "忽略"]
   }
 }
