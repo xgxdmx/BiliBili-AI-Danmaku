@@ -23,6 +23,18 @@ interface ProviderOption {
   modelGroups?: ModelGroup[];
 }
 
+interface ProviderConfig {
+  modelId: string;
+  apiKey: string;
+  endpoint: string;
+  ollamaBaseUrl?: string;
+  maxTokens: number;
+  temperature: number;
+  topP: number;
+  ollamaKeepAlive?: string;
+  requestTimeoutMs: number;
+}
+
 interface AIModelForm {
   provider: string;
   apiKey: string;
@@ -148,6 +160,30 @@ const form = reactive<AIModelForm>({
   requestTimeoutMs: 30000,
 });
 
+/** 缓存所有供应商的独立配置，切换供应商时保存/恢复 */
+const providerConfigs = reactive<Record<string, ProviderConfig>>({
+  opencode: {
+    modelId: defaultModelId,
+    apiKey: "",
+    endpoint: defaultModelEndpoint,
+    maxTokens: 256,
+    temperature: 0.7,
+    topP: 1,
+    requestTimeoutMs: 30000,
+  },
+  ollama: {
+    modelId: "",
+    apiKey: "",
+    endpoint: "http://localhost:11434/v1/chat/completions",
+    ollamaBaseUrl: "http://localhost:11434",
+    maxTokens: 2048,
+    temperature: 0.7,
+    topP: 1,
+    ollamaKeepAlive: "5m",
+    requestTimeoutMs: 120000,
+  },
+});
+
 // Ollama 动态模型列表
 const ollamaModels = ref<ProviderModel[]>([]);
 const ollamaLoading = ref(false);
@@ -239,7 +275,6 @@ const clearingQueue = ref(false);
 const clearingPreview = ref(false);
 const showProviderModal = ref(false);
 const showApiKey = ref(false);
-const savedApiKeys = reactive<Record<string, string>>({});
 
 const selectedProvider = computed(() => providerOptions.find((p) => p.id === form.provider) || providerOptions[0]);
 const modelGroups = computed(() => {
@@ -279,29 +314,34 @@ function parseSkipRepliesText(): string[] {
   return [...new Set(tokens)];
 }
 
+/** 将当前表单状态保存回 providerConfigs，并构建完整 aiModel payload */
+function syncFormToProviderConfig(): void {
+  const p = form.provider;
+  providerConfigs[p] = {
+    modelId: form.modelId,
+    apiKey: form.apiKey,
+    endpoint: form.endpoint,
+    ...(p === "ollama" ? { ollamaBaseUrl: ollamaBaseUrl.value } : {}),
+    maxTokens: Number(form.maxTokens) || (p === "ollama" ? 2048 : 256),
+    temperature: Number(form.temperature ?? 0.7),
+    topP: Number(form.topP ?? 1),
+    ...(p === "ollama" ? { ollamaKeepAlive: form.ollamaKeepAlive || "5m" } : {}),
+    requestTimeoutMs: Number(form.requestTimeoutMs) || (p === "ollama" ? 120000 : 30000),
+  };
+}
+
 /** 构建发送给 config-store 的 aiModel 完整 payload */
 function buildSavePayload(): Record<string, unknown> {
-  // 将当前供应商的 API Key 同步到密钥映射
-  const keysMap = { ...savedApiKeys };
-  keysMap[form.provider] = form.apiKey;
+  syncFormToProviderConfig();
 
   return {
     provider: form.provider,
-    apiKey: form.apiKey,
-    apiKeys: keysMap,
-    modelId: form.modelId,
-    endpoint: form.endpoint,
     prompt: form.prompt,
     sendIntervalMs: Math.max(500, Number(form.sendIntervalMs || 1800)),
     maxPending: Math.max(10, Number(form.maxPending || 100)),
     ignoreUsernames: form.ignoreUsernames,
     skipReplies: parseSkipRepliesText(),
-    ollamaBaseUrl: ollamaBaseUrl.value,
-    maxTokens: Number(form.maxTokens) || (form.provider === "ollama" ? 2048 : 256),
-    temperature: Number(form.temperature ?? 0.7),
-    topP: Number(form.topP ?? 1),
-    ollamaKeepAlive: form.ollamaKeepAlive || "5m",
-    requestTimeoutMs: Number(form.requestTimeoutMs) || (form.provider === "ollama" ? 120000 : 30000),
+    providers: JSON.parse(JSON.stringify(providerConfigs)),
   };
 }
 
@@ -320,29 +360,39 @@ const hasUnsavedChanges = computed(() => {
 watch(
   () => form.provider,
   (newProviderId, oldProviderId) => {
-    // 保存旧供应商的 API Key
+    // 保存旧供应商的配置
     if (oldProviderId) {
-      savedApiKeys[oldProviderId] = form.apiKey;
+      syncFormToProviderConfig();
     }
 
     const provider = providerOptions.find((p) => p.id === newProviderId);
     if (!provider) return;
-    form.endpoint = provider.endpoint;
-    // Ollama: 自动拉取模型列表，Endpoint 由地址栏驱动
+
+    // 从 providerConfigs 恢复新供应商的配置
+    const pc = providerConfigs[newProviderId];
+    if (pc) {
+      form.apiKey = pc.apiKey || "";
+      form.modelId = pc.modelId || "";
+      form.endpoint = pc.endpoint || provider.endpoint;
+      form.maxTokens = pc.maxTokens || (newProviderId === "ollama" ? 2048 : 256);
+      form.temperature = pc.temperature ?? 0.7;
+      form.topP = pc.topP ?? 1;
+      form.requestTimeoutMs = pc.requestTimeoutMs || (newProviderId === "ollama" ? 120000 : 30000);
+      form.ollamaKeepAlive = pc.ollamaKeepAlive || "5m";
+      if (pc.ollamaBaseUrl) ollamaBaseUrl.value = pc.ollamaBaseUrl;
+    } else {
+      form.endpoint = provider.endpoint;
+      form.apiKey = "";
+    }
+
+    // Ollama: 自动拉取模型列表
     if (newProviderId === "ollama") {
-      form.apiKey = savedApiKeys["ollama"] || "";
       form.endpoint = `${ollamaBaseUrl.value.replace(/\/+$/, "")}/v1/chat/completions`;
-      form.maxTokens = 2048;
-      form.requestTimeoutMs = 120000;
       fetchOllamaModelList();
     } else {
-      // 恢复该供应商之前保存的 API Key
-      form.apiKey = savedApiKeys[newProviderId] || "";
       if (!provider.models.some((m) => m.id === form.modelId) && !modelOptions.value.some((m) => m.id === form.modelId)) {
         form.modelId = modelOptions.value[0]?.id || "";
       }
-      form.maxTokens = 256;
-      form.requestTimeoutMs = 30000;
     }
   }
 );
@@ -384,34 +434,49 @@ async function loadConfig() {
   try {
     const cfg = await api.getConfig();
     if (cfg.aiModel) {
-      // 先恢复 ollamaBaseUrl，避免 provider watch 触发时地址还是默认值
-      if (cfg.aiModel.ollamaBaseUrl) {
-        ollamaBaseUrl.value = cfg.aiModel.ollamaBaseUrl;
-      }
-      // 恢复各供应商的 API Key 映射
-      if (cfg.aiModel.apiKeys && typeof cfg.aiModel.apiKeys === "object") {
-        Object.assign(savedApiKeys, cfg.aiModel.apiKeys);
-      }
-      form.provider = cfg.aiModel.provider || form.provider;
-      // 优先使用当前供应商映射中的密钥，其次使用全局 apiKey 字段
-      form.apiKey = savedApiKeys[form.provider] || cfg.aiModel.apiKey || "";
-      form.modelId = cfg.aiModel.modelId || form.modelId;
-      form.endpoint = cfg.aiModel.endpoint || form.endpoint;
-      form.prompt = cfg.aiModel.prompt || form.prompt;
+      const ai = cfg.aiModel as any;
+
+      // 恢复共享字段
+      form.provider = ai.provider || form.provider;
+      form.prompt = ai.prompt || form.prompt;
       lastSavedPrompt.value = form.prompt;
-      form.sendIntervalMs = Number(cfg.aiModel.sendIntervalMs || form.sendIntervalMs);
-      form.maxPending = Number(cfg.aiModel.maxPending || form.maxPending);
-      form.ignoreUsernames = Array.isArray(cfg.aiModel.ignoreUsernames) ? cfg.aiModel.ignoreUsernames : [];
-      form.skipReplies = Array.isArray(cfg.aiModel.skipReplies) && cfg.aiModel.skipReplies.length > 0
-        ? cfg.aiModel.skipReplies
+      form.sendIntervalMs = Number(ai.sendIntervalMs || form.sendIntervalMs);
+      form.maxPending = Number(ai.maxPending || form.maxPending);
+      form.ignoreUsernames = Array.isArray(ai.ignoreUsernames) ? ai.ignoreUsernames : [];
+      form.skipReplies = Array.isArray(ai.skipReplies) && ai.skipReplies.length > 0
+        ? ai.skipReplies
         : form.skipReplies;
-      form.maxTokens = Number(cfg.aiModel.maxTokens || (cfg.aiModel.provider === "ollama" ? 2048 : 256));
-      form.temperature = Number(cfg.aiModel.temperature ?? 0.7);
-      form.topP = Number(cfg.aiModel.topP ?? 1);
-      form.ollamaKeepAlive = String(cfg.aiModel.ollamaKeepAlive || "5m");
-      form.requestTimeoutMs = Number(cfg.aiModel.requestTimeoutMs || (cfg.aiModel.provider === "ollama" ? 120000 : 30000));
       skipRepliesText.value = form.skipReplies.join("\n");
-      // 初始化保存快照，用于未保存变更检测
+
+      // 恢复各供应商独立配置
+      if (ai.providers && typeof ai.providers === "object") {
+        Object.keys(ai.providers).forEach((pid) => {
+          const pc = ai.providers[pid];
+          if (pc) {
+            providerConfigs[pid] = { ...providerConfigs[pid], ...pc };
+          }
+        });
+      }
+
+      // 恢复 Ollama 地址（需要在 provider watch 之前）
+      if (providerConfigs.ollama?.ollamaBaseUrl) {
+        ollamaBaseUrl.value = providerConfigs.ollama.ollamaBaseUrl;
+      }
+
+      // 从当前激活供应商的配置恢复表单
+      const activePc = providerConfigs[form.provider];
+      if (activePc) {
+        form.apiKey = activePc.apiKey || "";
+        form.modelId = activePc.modelId || form.modelId;
+        form.endpoint = activePc.endpoint || form.endpoint;
+        form.maxTokens = activePc.maxTokens || (form.provider === "ollama" ? 2048 : 256);
+        form.temperature = activePc.temperature ?? 0.7;
+        form.topP = activePc.topP ?? 1;
+        form.ollamaKeepAlive = activePc.ollamaKeepAlive || "5m";
+        form.requestTimeoutMs = activePc.requestTimeoutMs || (form.provider === "ollama" ? 120000 : 30000);
+      }
+
+      // 初始化保存快照
       lastSavedSnapshot.value = takeSnapshot();
     }
     const status = await api.getAIStatus();

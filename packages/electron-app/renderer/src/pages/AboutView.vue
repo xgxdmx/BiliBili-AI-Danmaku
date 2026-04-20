@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { ref, onMounted } from "vue";
+
 // ─── 应用信息 ─────────────────────────────────────────────────────
 const APP_INFO = {
-  name: "BiliBili 弹幕 Claw",
-  version: __APP_VERSION__ || "0.1.0",
+  name: "BiliBili AI弹幕姬",
+  version: __APP_VERSION__ || "0.2.0",
   author: "星光下的梦想",
   description: "B站直播间弹幕监听 + AI 自动回复",
   license: "Apache-2.0",
@@ -12,10 +14,12 @@ const APP_INFO = {
 // ─── 技术栈 ─────────────────────────────────────────────────────
 const TECH_STACK = [
   { name: "Electron", version: "41" },
+  { name: "Vite", version: "6.4.1" },
   { name: "Vue", version: "3" },
-  { name: "Python", version: "3.10+" },
-  { name: "blivedm", version: "" },
-  { name: "aiohttp", version: "≥3.9" },
+  { name: "Python", version: "3.13" },
+  { name: "aiohttp", version: "3.9" },
+  { name: "blivedm", version: "1.1.5" },
+
 ];
 
 // ─── 开源致谢 ───────────────────────────────────────────────────
@@ -26,6 +30,30 @@ const OPEN_SOURCE = [
   { name: "electron-store", url: "https://github.com/sindresorhus/electron-store" },
   { name: "vue-router", url: "https://router.vuejs.org" },
 ];
+
+// ─── 主题设置 ─────────────────────────────────────────────────
+type ThemeMode = "light" | "dark" | "system";
+const themeMode = ref<ThemeMode>("system");
+
+const themeOptions: { value: ThemeMode; label: string; desc: string }[] = [
+  { value: "light", label: "☀️ 明亮", desc: "明亮淡雅风格" },
+  { value: "dark", label: "🌙 夜间", desc: "深夜酷炫风格" },
+  { value: "system", label: "💻 跟随系统", desc: "自动匹配系统主题" },
+];
+
+onMounted(async () => {
+  try {
+    const result = await window.danmakuAPI?.getTheme();
+    if (result) themeMode.value = result.mode;
+  } catch { /* 忽略 */ }
+});
+
+async function setTheme(mode: ThemeMode) {
+  themeMode.value = mode;
+  try {
+    await window.danmakuAPI?.setTheme(mode);
+  } catch { /* 忽略 */ }
+}
 </script>
 
 <template>
@@ -61,6 +89,22 @@ const OPEN_SOURCE = [
       <div class="info-row">
         <span class="info-label">许可证</span>
         <span class="info-value">{{ APP_INFO.license }}</span>
+      </div>
+    </div>
+
+    <!-- 主题设置 -->
+    <div class="section">
+      <h3 class="section-title">外观主题</h3>
+      <div class="theme-options">
+        <button
+          v-for="opt in themeOptions"
+          :key="opt.value"
+          :class="['theme-option', { active: themeMode === opt.value }]"
+          @click="setTheme(opt.value)"
+        >
+          <span class="theme-label">{{ opt.label }}</span>
+          <span class="theme-desc">{{ opt.desc }}</span>
+        </button>
       </div>
     </div>
 
@@ -251,6 +295,52 @@ const OPEN_SOURCE = [
 .oss-arrow {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+/* ─── 主题选项 ─────────────────────────────── */
+.theme-options {
+  display: flex;
+  gap: 8px;
+}
+
+.theme-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.theme-option:hover {
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+}
+
+.theme-option.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.theme-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.theme-option.active .theme-label {
+  color: var(--accent);
+}
+
+.theme-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 /* ─── 底部 ──────────────────────────────── */

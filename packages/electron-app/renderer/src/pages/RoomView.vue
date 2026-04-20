@@ -275,7 +275,7 @@ async function openPopupLogin() {
 <template>
   <div class="page">
     <div class="page-header">
-      <h2 class="page-title">直播间</h2>
+      <h2 class="page-title">直播间配置</h2>
     </div>
 
     <!-- 连接设置 -->

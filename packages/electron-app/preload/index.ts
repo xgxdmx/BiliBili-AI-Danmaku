@@ -33,6 +33,8 @@ export interface QuickReplyRule {
 export interface RoomConfig {
   roomId: number;
   enabled: boolean;
+  /** 弹幕捕捉总开关。关闭后弹幕仅显示，不触发匹配/AI/固定回复 */
+  captureEnabled: boolean;
   minMedalLevel: number;
   sendOnDisconnect: boolean;
   disconnectMessage: string;
@@ -43,29 +45,26 @@ export interface OpenClawConfig {
   token: string;
 }
 
+export interface ProviderConfig {
+  modelId: string;
+  apiKey: string;
+  endpoint: string;
+  ollamaBaseUrl?: string;
+  maxTokens: number;
+  temperature: number;
+  topP: number;
+  ollamaKeepAlive?: string;
+  requestTimeoutMs: number;
+}
+
 export interface AIModelConfig {
   provider: string;
-  apiKey: string;
-  modelId: string;
-  endpoint: string;
   prompt: string;
   sendIntervalMs: number;
   maxPending: number;
   ignoreUsernames: string[];
   skipReplies: string[];
-  ollamaBaseUrl?: string;
-  /** 最大输出 token 数（含 thinking）。Ollama thinking 模型建议 ≥ 2048 */
-  maxTokens?: number;
-  /** 回复温度 (0~2) */
-  temperature?: number;
-  /** 核采样概率累积截断 (0~1)，与温度互补 */
-  topP?: number;
-  /** Ollama 模型保活时间，如 "5m" */
-  ollamaKeepAlive?: string;
-  /** 单次请求超时(ms)。Ollama 建议 ≥ 120000，云端 API 30000 即可 */
-  requestTimeoutMs?: number;
-  /** 各供应商 API Key 映射，避免切换供应商时丢失已保存的密钥 */
-  apiKeys?: Record<string, string>;
+  providers: Record<string, ProviderConfig>;
 }
 
 export interface AIConnectionStatus {
@@ -97,8 +96,12 @@ export interface ConfigSchema {
   credentials: Credentials;
   keywords: KeywordRule[];
   quickReplies: QuickReplyRule[];
+  /** 固定回复全局开关 */
+  quickRepliesEnabled: boolean;
   openClaw: OpenClawConfig;
   aiModel: AIModelConfig;
+  /** 主题模式：light / dark / system */
+  theme: "light" | "dark" | "system";
 }
 
 export interface DanmakuAPI {
@@ -111,7 +114,7 @@ export interface DanmakuAPI {
   updateQuickReplies: (rules: QuickReplyRule[]) => Promise<{ status: string }>;
   getConfig: () => Promise<ConfigSchema>;
   setConfig: (key: string, value: unknown) => Promise<{ status: string }>;
-  exportConfig: () => Promise<{ status: string; path?: string; error?: string }>;
+  exportConfig: (options?: { includeSensitive?: boolean }) => Promise<{ status: string; path?: string; error?: string }>;
   importConfig: (filePath: string) => Promise<{ status: string; error?: string }>;
   importConfigContent: (content: string) => Promise<{ status: string; error?: string }>;
   openBiliLogin: () => Promise<{ status: string; state?: "opened"; message?: string }>;
@@ -136,6 +139,12 @@ export interface DanmakuAPI {
   onConnected: (callback: (data: unknown) => void) => () => void;
   onDisconnected: (callback: (data: unknown) => void) => () => void;
   onError: (callback: (data: unknown) => void) => () => void;
+  /** 获取当前主题模式设置 */
+  getTheme: () => Promise<{ mode: "light" | "dark" | "system"; resolved: "light" | "dark" }>;
+  /** 设置主题模式 */
+  setTheme: (mode: "light" | "dark" | "system") => Promise<{ resolved: "light" | "dark" }>;
+  /** 监听主题变更（系统主题变化或用户手动切换） */
+  onThemeChanged: (callback: (resolved: "light" | "dark") => void) => () => void;
 }
 
 const api: DanmakuAPI = {
@@ -148,7 +157,7 @@ const api: DanmakuAPI = {
   updateQuickReplies: (rules) => ipcRenderer.invoke("quickReplies:update", rules),
   getConfig: () => ipcRenderer.invoke("config:get"),
   setConfig: (key, value) => ipcRenderer.invoke("config:set", key, value),
-  exportConfig: () => ipcRenderer.invoke("config:export"),
+  exportConfig: (options) => ipcRenderer.invoke("config:export", options),
   importConfig: (filePath) => ipcRenderer.invoke("config:import", filePath),
   importConfigContent: (content) => ipcRenderer.invoke("config:importContent", content),
   openBiliLogin: () => ipcRenderer.invoke("auth:openLoginWindow"),
@@ -199,6 +208,14 @@ const api: DanmakuAPI = {
     const handler = (_event: unknown, data: unknown) => callback(data);
     ipcRenderer.on("danmaku:error", handler);
     return () => ipcRenderer.removeListener("danmaku:error", handler);
+  },
+
+  getTheme: () => ipcRenderer.invoke("theme:get"),
+  setTheme: (mode) => ipcRenderer.invoke("theme:set", mode),
+  onThemeChanged: (callback) => {
+    const handler = (_event: unknown, resolved: "light" | "dark") => callback(resolved);
+    ipcRenderer.on("theme:changed", handler);
+    return () => ipcRenderer.removeListener("theme:changed", handler);
   },
 };
 

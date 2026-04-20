@@ -6,12 +6,14 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.8+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/Vue-3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" />
   <img src="https://img.shields.io/badge/License-Apache%202.0-yellow?style=flat-square" alt="License" />
 </p>
+
+> ⚠️ **声明**：这是一个 **Vibe Coding** 产物。大部分代码由 AI 生成，代码可能不够优雅，但——它和我有一个能跑就行。
 
 ---
 
@@ -22,9 +24,12 @@
 - 🤖 **大模型回复** — 对接 OpenAI 兼容 API + 本地 Ollama，支持自定义 Prompt、发送间隔、队列上限、跳过规则
 - ⚡ **固定回复引擎** — 关键词命中后直接发送预设回复，低延迟无需等待 AI
 - 🔑 **B站一键登录** — 内置 B站扫码登录弹窗，自动提取 Cookie，无需手动复制
-- 🔒 **配置加密持久化** — 凭证本地加密存储，支持导出/导入配置文件
+- 🔒 **配置加密持久化** — 凭证本地 AES-256-GCM 加密存储，支持导出/导入（可选择是否包含敏感信息）
 - 📊 **弹幕监控面板** — 实时弹幕流、匹配命中列表、AI 队列状态一目了然
-- ℹ️ **关于界面** — 展示版本、作者、构建时间等信息
+- 🎨 **主题切换** — 支持亮色/暗色/跟随系统三种主题模式
+- 🔄 **热重载** — 连接中修改配置自动生效，无需断开重连
+- 📋 **模型列表** — OpenCode/Ollama 模型列表自动获取，实时更新
+- 🔧 **per-provider 配置** — 每个模型供应商拥有独立的模型配置，自由切换
 
 ## 🏗️ 架构概览
 
@@ -188,36 +193,53 @@ pnpm package:clean
 ```jsonc
 {
   "room": {
-    "roomId": 12345,            // 📺 直播间房间号
+    "roomId": 12345,
     "enabled": true,
-    "minMedalLevel": 0,         // 🏅 最低粉丝牌等级过滤
-    "sendOnDisconnect": true,    // 👋 断开时自动发告别弹幕
+    "minMedalLevel": 0,
+    "captureEnabled": true,
+    "sendOnDisconnect": true,
     "disconnectMessage": "先下播啦，感谢大家陪伴，我们下次见～"
   },
   "credentials": {
-    "sessdata": "***",           // 🔑 B站 Cookie (自动获取)
+    "sessdata": "***",
     "biliJct": "***",
     "buvid3": "***"
   },
   "keywords": [
-    { "pattern": "你好", "type": "keyword", "caseSensitive": false, "scope": "both" },
-    { "pattern": "^签到$", "type": "regex", "scope": "quickReply" }
+    { "pattern": "你好", "type": "keyword", "caseSensitive": false, "scope": "both", "enabled": true },
+    { "pattern": "^签到$", "type": "regex", "scope": "quickReply", "enabled": true }
   ],
   "quickReplies": [
-    { "contains": ["签到"], "reply": "感谢签到～", "cooldownMs": 5000 }
+    { "contains": ["签到"], "reply": "感谢签到～", "cooldownMs": 5000, "enabled": true }
   ],
   "aiModel": {
-    "provider": "opencode",     // 🤖 opencode / ollama
-    "apiKey": "sk-***",
-    "modelId": "minimax-m2.5-free",
-    "endpoint": "https://opencode.ai/zen/v1/chat/completions",
-    "ollamaBaseUrl": "http://localhost:11434",  // 仅 ollama 需要
+    "provider": "opencode",
     "prompt": "你是一个直播间助理，逐条回复，单条不超过40字。",
-    "sendIntervalMs": 1800,     // ⏱️ 发送间隔 (防风控)
-    "maxPending": 100,          // 📊 队列上限
-    "ignoreUsernames": [],      // 🙈 忽略的用户名列表
-    "skipReplies": ["NO_REPLY", "无需回复", "忽略"]
-  }
+    "sendIntervalMs": 1800,
+    "maxPending": 100,
+    "ignoreUsernames": [],
+    "skipReplies": ["NO_REPLY", "无需回复", "忽略"],
+    "providers": {
+      "opencode": {
+        "modelId": "minimax-m2.5-free",
+        "apiKey": "sk-***",
+        "endpoint": "https://opencode.ai/zen/v1/chat/completions",
+        "temperature": 0.7,
+        "topP": 0.9,
+        "maxTokens": 500
+      },
+      "ollama": {
+        "modelId": "qwen2.5:7b",
+        "ollamaBaseUrl": "http://localhost:11434",
+        "temperature": 0.7,
+        "topP": 0.9,
+        "maxTokens": 500,
+        "ollamaKeepAlive": "5m",
+        "requestTimeoutMs": 120000
+      }
+    }
+  },
+  "theme": "system"
 }
 ```
 
@@ -254,13 +276,22 @@ pnpm package:clean
 | 📦 类型共享 | TypeScript project references |
 | 🔨 构建 | electron-vite + electron-builder + PyInstaller |
 
+## 📅 更新日志
+
+| 版本 | 日期 | 主要改动 |
+|:------:|:--------:|----------|
+| **v0.2.0** | 2025-04 | OpenCode 模型列表自动获取、启动时实时拉取可用模型 • 新增亮色/暗色/跟随系统三种主题模式 • 导出配置可选择是否包含敏感信息 • 每个模型供应商独立配置、连接中自动热重载 • 菜单栏间距优化 |
+| **v0.1.2** | 2025-04 | Ollama 模型参数自定义（温度/Top P/Max Token/Keep-Alive/超时）• 自动识别 Ollama 模型列表 • 修复 Thinking 过程误识别问题 • 优化弹幕回复提取逻辑、减少 NO_REPLY |
+| **v0.1.1** | 2025-02 | 修复打包异常 • 增加跨平台打包支持 |
+| **v0.1.0** | 2025-01 | 初始版本：B站弹幕监听+关键词匹配 • AI 自动回复（OpenCode/Ollama 双供应商）• B站扫码登录 • 配置加密存储 |
+
 ## ⚠️ 安全提醒
 
 > 🔴 **配置文件包含 B站 Cookie 和 AI API Key 等敏感信息！**
 >
 > - 🔒 `config.json` 已在 `.gitignore` 中排除，**绝不可提交到版本控制**
 > - 🏷️ 配置文件使用基于机器指纹的 AES-256-GCM 加密存储
-> - 📄 导出的配置文件 (`config-export.json`) 为明文，仅用于本地迁移，**务必妥善保管**
+> - 📄 导出的配置文件为明文，仅用于本地迁移，**务必妥善保管**
 > - 🚫 如需分享项目，请确保清除所有包含凭证的文件
 
 ## 📄 许可证

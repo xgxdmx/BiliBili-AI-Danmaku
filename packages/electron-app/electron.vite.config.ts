@@ -31,7 +31,7 @@ export default defineConfig({
       },
     },
     define: {
-      __APP_BUILD_DATE__: JSON.stringify(new Date().toISOString().split("T")[0]),
+      __APP_BUILD_DATE__: JSON.stringify(new Date(Date.now() + 8 * 3600000).toISOString().split("T")[0]),
       __APP_VERSION__: JSON.stringify(packageJson.version || "0.0.0"),
     },
     resolve: {
