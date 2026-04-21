@@ -183,26 +183,6 @@ function getPlatformLabel() {
 }
 
 /**
- * 从 node_modules 解析本地 electron-builder CLI 路径。
- * 直接调用 CLI，避免被 pnpm 递归 exec 包装后吞掉关键错误日志。
- */
-function getElectronBuilderCli() {
-  const candidates = [
-    path.join(ROOT, "node_modules", ".pnpm", "node_modules", "electron-builder", "cli.js"),
-    path.join(ROOT, "node_modules", "electron-builder", "cli.js"),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  logFail("electron-builder CLI not found in node_modules");
-  process.exit(1);
-}
-
-/**
  * 清理构建产物和陈旧 runtime 文件。
  * 可重复调用，不依赖调用顺序。
  */
@@ -424,8 +404,9 @@ function buildElectron() {
   requirePath(deployDir, ".deploy directory");
   patchDeployPackage();
 
-  run("node", [
-    getElectronBuilderCli(),
+  run(pnpmCmd, [
+    "exec",
+    "electron-builder",
     "--projectDir",
     "./.deploy",
     ...getElectronBuilderTarget(),
