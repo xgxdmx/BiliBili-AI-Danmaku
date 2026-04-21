@@ -66,13 +66,16 @@ for (const dir of dirsToCopy) {
 
 const isWin = process.platform === "win32";
 const installResult = spawnSync(
-  isWin ? "pnpm.cmd" : "pnpm",
-  ["install", "--prod", "--config.ignore-workspace-root-check=true", "--shamefully-hoist"],
+  isWin ? (process.env.ComSpec || "cmd.exe") : "pnpm",
+  isWin
+    ? ["/d", "/s", "/c", "pnpm.cmd", "install", "--prod", "--config.ignore-workspace-root-check=true", "--shamefully-hoist"]
+    : ["install", "--prod", "--config.ignore-workspace-root-check=true", "--shamefully-hoist"],
   {
     cwd: stagingDir,
     stdio: "inherit",
     shell: false,
     env: { ...process.env, CI: process.env.CI ?? "true" },
+    windowsHide: true,
   }
 );
 

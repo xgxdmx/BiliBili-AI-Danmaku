@@ -16,8 +16,6 @@ const RUNTIME_ROOT = path.join(DANMAKU_CORE, "runtime");
 const RUNTIME_RUN_DIR = path.join(RUNTIME_ROOT, "run");
 
 const isWin = process.platform === "win32";
-const isMac = process.platform === "darwin";
-
 const CYAN = "\x1b[36m";
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
@@ -33,10 +31,19 @@ function logFail(msg) { console.error(`  ${RED}✖${RESET} ${msg}`); }
 function run(cmd, args, options = {}) {
   const cwd = options.cwd || ROOT;
   logInfo([cmd, ...args].join(" "));
-  execFileSync(cmd, args, {
+
+  const actualCmd = isWin && cmd.toLowerCase().endsWith(".cmd")
+    ? process.env.ComSpec || "cmd.exe"
+    : cmd;
+  const actualArgs = isWin && cmd.toLowerCase().endsWith(".cmd")
+    ? ["/d", "/s", "/c", cmd, ...args]
+    : args;
+
+  execFileSync(actualCmd, actualArgs, {
     cwd,
     stdio: "inherit",
     env: { ...process.env, ...options.env },
+    windowsHide: true,
   });
 }
 
@@ -108,13 +115,11 @@ function pipPackageExists(python, pkg) {
 
 function getElectronBuilderTarget() {
   if (isWin) return ["--win", "nsis"];
-  if (isMac) return ["--mac", "dmg", "zip"];
   return ["--linux", "AppImage"];
 }
 
 function getPlatformLabel() {
   if (isWin) return "Windows";
-  if (isMac) return "macOS";
   return "Linux";
 }
 

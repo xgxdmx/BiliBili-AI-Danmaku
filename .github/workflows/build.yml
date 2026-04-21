@@ -22,10 +22,6 @@ jobs:
             artifact_name: windows-dist
             python_version: "3.13"
             node_version: "24"
-          - os: macos-latest
-            artifact_name: macos-dist
-            python_version: "3.13"
-            node_version: "24"
 
     steps:
       - name: Checkout
@@ -78,16 +74,6 @@ jobs:
           if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) {
             Write-Error "Packaged runtime failed to launch, exit code: $LASTEXITCODE"
           }
-
-      - name: Verify packaged app contains danmaku-core binaries (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          app_dir=$(find dist -maxdepth 2 -type d -name "*.app" | head -n 1)
-          test -n "$app_dir"
-          base="$app_dir/Contents/Resources/danmaku-core/run"
-          test -d "$base"
-          test -f "$base/run"
 
       - name: Verify NSIS installer output can be installed (Windows)
         if: runner.os == 'Windows'
