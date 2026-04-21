@@ -31,6 +31,7 @@ const savedRules = ref<Rule[]>([]);
 
 // 固定回复规则
 const quickReplies = ref<QuickReply[]>([]);
+const quickReplyEnabled = ref(false);
 const qrContainsText = ref("");
 const qrNotContainsText = ref("");
 const qrRegex = ref("");
@@ -39,7 +40,6 @@ const qrCaseSensitive = ref(false);
 const qrCooldown = ref(0);
 const qrSaved = ref(false);
 const qrError = ref("");
-const quickRepliesEnabled = ref(false);
 
 const captureEnabled = ref(true);
 const saved = ref(false);
@@ -65,7 +65,8 @@ onMounted(async () => {
     minMedalLevel.value = Number(config?.room?.minMedalLevel || 0);
     // 读取捕捉开关状态（默认 true）
     captureEnabled.value = config?.room?.captureEnabled !== false;
-    quickRepliesEnabled.value = config?.quickRepliesEnabled === true;
+    // 读取固定回复全局开关（默认 false）
+    quickReplyEnabled.value = config?.quickReplyEnabled === true;
     if (Array.isArray(config?.quickReplies) && config.quickReplies.length > 0) {
       quickReplies.value = [...config.quickReplies];
     }
@@ -86,6 +87,16 @@ async function saveMinMedalLevel() {
     }, 1800);
   } catch (e) {
     medalError.value = "保存失败: " + String(e);
+  }
+}
+
+// 切换固定回复全局开关，持久化到配置文件
+async function toggleQuickReplyEnabled() {
+  try {
+    await window.danmakuAPI?.setConfig("quickReplyEnabled", quickReplyEnabled.value === true);
+  } catch {
+    // 持久化失败时回滚 UI
+    quickReplyEnabled.value = !quickReplyEnabled.value;
   }
 }
 
@@ -118,14 +129,6 @@ async function toggleCapture() {
   } catch {
     // 持久化失败时回滚 UI
     captureEnabled.value = !captureEnabled.value;
-  }
-}
-
-async function toggleQuickRepliesEnabled() {
-  try {
-    await window.danmakuAPI?.setConfig("quickRepliesEnabled", quickRepliesEnabled.value);
-  } catch {
-    quickRepliesEnabled.value = !quickRepliesEnabled.value;
   }
 }
 
@@ -367,22 +370,20 @@ async function toggleQuickReply(id: string) {
 
     <!-- 固定回复规则 -->
     <div class="card" style="margin-top: 12px;">
-      <div class="page-header" style="margin-bottom: 8px;">
-        <div>
-          <h3 class="card-title">固定回复规则</h3>
-          <p class="card-desc">弹幕命中包含词/正则且不命中排除词时，直接发送固定回复（不走 AI）。优先级高于 AI 自动回复。</p>
-        </div>
+      <div class="btn-row" style="justify-content: space-between; margin-bottom: 6px;">
+        <h3 class="card-title" style="margin: 0;">固定回复规则</h3>
         <label class="switch-row">
           <span class="switch-label">全局开关</span>
-          <input v-model="quickRepliesEnabled" type="checkbox" class="switch-input" @change="toggleQuickRepliesEnabled" />
-          <span class="switch-track" :class="{ on: quickRepliesEnabled }">
+          <input v-model="quickReplyEnabled" type="checkbox" class="switch-input" @change="toggleQuickReplyEnabled" />
+          <span class="switch-track" :class="{ on: quickReplyEnabled }">
             <span class="switch-thumb"></span>
           </span>
-          <span class="switch-state" :class="quickRepliesEnabled ? 'on' : 'off'">
-            {{ quickRepliesEnabled ? "已开启" : "默认关闭" }}
+          <span class="switch-state" :class="quickReplyEnabled ? 'on' : 'off'">
+            {{ quickReplyEnabled ? "已开启" : "已关闭" }}
           </span>
         </label>
       </div>
+      <p class="card-desc">弹幕命中包含词/正则且不命中排除词时，直接发送固定回复（不走 AI）。优先级高于 AI 自动回复。</p>
 
       <div class="field">
         <label class="field-label">包含词（任一命中即触发，逗号或换行分隔）</label>

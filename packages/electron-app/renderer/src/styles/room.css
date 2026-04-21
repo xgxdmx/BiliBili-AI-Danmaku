@@ -3,6 +3,110 @@
 .help-text { font-size: 12px; color: var(--text-muted); line-height: 1.8; }
 .help-text p { margin: 0; }
 
+/* 连接说明排版：卡片化分组，提升可读性 */
+.help-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.help-block {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.help-title {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.help-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.help-list li {
+  margin: 3px 0;
+}
+
+.help-tip {
+  margin-top: 8px !important;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.help-tip code {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* 说明弹窗：对齐模型供应商说明的交互风格 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 560px;
+  max-width: 92vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+}
+
 .cookie-preview { margin-bottom: 12px; padding: 10px; background: var(--bg-primary); border-radius: 6px; }
 .cookie-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .cookie-label { font-size: 12px; color: var(--accent); font-weight: 600; }

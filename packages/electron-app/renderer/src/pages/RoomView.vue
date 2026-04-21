@@ -138,6 +138,9 @@ const popupLoginLoading = ref(false);
 const popupLoginStatus = ref("");
 let offLoginStatus: (() => void) | null = null;
 
+// B站连接说明弹窗
+const showBiliHelpModal = ref(false);
+
 // 连接状态
 const isConnected = ref(false);
 const currentRoomId = ref<number | null>(null);
@@ -402,20 +405,49 @@ async function openPopupLogin() {
     </div>
 
     <div class="card">
-      <h3 class="card-title">B站连接使用说明</h3>
-      <div class="help-text">
-        <ul>
-          扫码登录：
-          <li>单击“弹出B站登录页”按钮，使用Bilibili移动版APP进行扫码登录。</li>
-        </ul>
-        <ul>
-          浏览器Cookie登录：
-          <li>打开浏览器登录B站</li>
-          <li>打开F12开发者工具，点击网络（Network）标签页，单击Fetch/XHR过滤器</li>
-          <li>刷新B站，在F12开发者工具里可以看见许多请求项，找到标头（Headers）内请求标头（Request Headers）含有Cookie的数据项，并复制Cookie全部内容到工具输入框内</li>
-        </ul>
+      <div class="btn-row" style="justify-content: space-between;">
+        <h3 class="card-title" style="margin: 0;">B站连接使用说明</h3>
+        <button class="btn btn-muted" @click="showBiliHelpModal = true">查看说明</button>
       </div>
+      <p class="card-desc" style="margin-top: 8px; margin-bottom: 0;">
+        提供扫码登录与浏览器 Cookie 登录两种方式，点击「查看说明」可打开详细步骤。
+      </p>
     </div>
+
+    <!-- B站连接说明弹窗（样式与模型供应商说明一致） -->
+    <Teleport to="body">
+      <div v-if="showBiliHelpModal" class="modal-overlay" @click.self="showBiliHelpModal = false">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 class="modal-title">B站连接使用说明</h3>
+            <button class="modal-close" @click="showBiliHelpModal = false">&times;</button>
+          </div>
+          <div class="modal-body">
+            <section class="help-block">
+              <h4 class="help-title">推荐方式：扫码登录</h4>
+              <ol class="help-list">
+                <li>点击「弹出B站登录页」。</li>
+                <li>使用 Bilibili 手机 App 扫码并确认登录。</li>
+                <li>登录成功后，本工具会自动抓取并保存 Cookie。</li>
+              </ol>
+            </section>
+
+            <section class="help-block">
+              <h4 class="help-title">备用方式：浏览器 Cookie 登录</h4>
+              <ol class="help-list">
+                <li>先在浏览器登录 B 站账号。</li>
+                <li>按 F12 打开开发者工具，进入 Network，筛选 Fetch/XHR。</li>
+                <li>刷新页面，点开任意请求，在 Headers 的 Request Headers 中复制整段 Cookie。</li>
+                <li>粘贴到本页「粘贴Cookie（自动识别）」输入框，点击「识别」。</li>
+              </ol>
+              <p class="help-tip">
+                提示：至少需要 <code>SESSDATA</code> 和 <code>bili_jct</code> 才能连接发送；<code>buvid3</code> 为可选。
+              </p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 

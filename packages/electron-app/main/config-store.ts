@@ -104,10 +104,15 @@ export interface AIModelConfig {
   providers: Record<string, ProviderConfig>;
 }
 
+/** 点击窗口右上角关闭按钮（X）时的行为 */
+export type CloseWindowBehavior = "ask" | "tray" | "exit";
+
 /** 应用配置总结构，对应 electron-store 存储的完整 schema */
 export interface ConfigSchema {
   room: RoomConfig;
   credentials: Credentials;
+  /** 固定回复全局开关：false 时固定回复引擎完全不触发 */
+  quickReplyEnabled: boolean;
   keywords: KeywordRule[];
   /** 固定回复全局开关。关闭后规则保留但不会触发发送 */
   quickRepliesEnabled: boolean;
@@ -115,6 +120,8 @@ export interface ConfigSchema {
   aiModel: AIModelConfig;
   /** 主题模式：light / dark / system */
   theme: "light" | "dark" | "system";
+  /** 点击主窗口关闭按钮（X）时的行为 */
+  closeWindowBehavior: CloseWindowBehavior;
 }
 
 // ─── 默认值 & 常量 ──────────────────────────────────────────
@@ -134,6 +141,7 @@ const schema: ConfigSchema = {
     biliJct: "",
     buvid3: "",
   },
+  quickReplyEnabled: false,
   keywords: [],
   quickRepliesEnabled: false,
   quickReplies: [],
@@ -168,15 +176,19 @@ const schema: ConfigSchema = {
     },
   },
   theme: "system",
+  closeWindowBehavior: "ask",
 };
 
 // ─── 加密密钥派生 ──────────────────────────────────────────
 
-/** 获取配置文件目录：打包模式在 exe 同目录，开发模式在项目根目录 */
+/** 打包模式下在 Roaming 里使用固定目录名，避免目录名随产品名变化 */
+const ROAMING_CONFIG_DIR_NAME = "BiliBiliDanmuClaw";
+
+/** 获取配置文件目录：打包模式在 AppData\Roaming，开发模式在项目根目录 */
 function getConfigDir(): string {
   if (app.isPackaged) {
-    // 打包模式：使用 exe 同目录
-    return dirname(app.getPath("exe"));
+    // 打包模式：使用 Roaming 下应用专属目录
+    return join(app.getPath("appData"), ROAMING_CONFIG_DIR_NAME);
   }
   // 开发模式：使用项目根目录
   return join(app.getAppPath(), "../../");
@@ -192,6 +204,35 @@ const ENCRYPTION_KEY_VERSION = "v2";
 if (!existsSync(configDir)) {
   mkdirSync(configDir, { recursive: true });
 }
+
+/**
+ * 迁移旧版打包配置路径（exe 同目录）到 Roaming。
+ * 仅在目标不存在时复制，避免覆盖用户新配置。
+ */
+function migratePackagedConfigFromExeDirIfNeeded(): void {
+  if (!app.isPackaged) return;
+
+  const oldDir = dirname(app.getPath("exe"));
+  if (!oldDir || oldDir === configDir) return;
+
+  const oldConfigPath = join(oldDir, "config.json");
+  const newConfigPath = join(configDir, "config.json");
+  const oldLegacyBakPath = join(oldDir, "config.json.legacy.bak");
+  const newLegacyBakPath = join(configDir, "config.json.legacy.bak");
+
+  try {
+    if (existsSync(oldConfigPath) && !existsSync(newConfigPath)) {
+      copyFileSync(oldConfigPath, newConfigPath);
+    }
+    if (existsSync(oldLegacyBakPath) && !existsSync(newLegacyBakPath)) {
+      copyFileSync(oldLegacyBakPath, newLegacyBakPath);
+    }
+  } catch {
+    // 迁移失败不阻塞启动，继续使用当前目录
+  }
+}
+
+migratePackagedConfigFromExeDirIfNeeded();
 
 // 开发/打包模式配置目录已就绪
 
@@ -278,11 +319,13 @@ export function getConfig(): ConfigSchema {
   const raw = {
     room: store.get("room", schema.room),
     credentials: store.get("credentials", schema.credentials),
+    quickReplyEnabled: store.get("quickReplyEnabled", schema.quickReplyEnabled),
     keywords: store.get("keywords", schema.keywords),
     quickRepliesEnabled: store.get("quickRepliesEnabled", schema.quickRepliesEnabled),
     quickReplies: store.get("quickReplies", schema.quickReplies),
     aiModel: store.get("aiModel", schema.aiModel),
     theme: store.get("theme", schema.theme),
+    closeWindowBehavior: store.get("closeWindowBehavior", schema.closeWindowBehavior),
   };
 
   // 迁移旧版 aiModel（扁平结构 → per-provider 结构）
@@ -453,6 +496,7 @@ export function exportConfigToFile(
       },
       room: config.room,
       credentials: exportedCredentials,
+      quickReplyEnabled: config.quickReplyEnabled === true,
       keywords: config.keywords,
       quickRepliesEnabled: config.quickRepliesEnabled ?? schema.quickRepliesEnabled,
       quickReplies: config.quickReplies,
@@ -465,6 +509,7 @@ export function exportConfigToFile(
         skipReplies: ai.skipReplies,
         providers: exportedProviders,
       },
+      closeWindowBehavior: config.closeWindowBehavior || "ask",
     };
     const configDir = store.path ? dirname(store.path) : process.cwd();
     const exportPath = targetPath || join(configDir, 'config-export.json');
@@ -502,11 +547,17 @@ export function importConfigFromContent(content: string): { status: string; erro
     // 验证并保存每个字段
     if (config.room) store.set("room", config.room);
     if (config.credentials) store.set("credentials", config.credentials);
+    if ((config as Partial<ConfigSchema>).quickReplyEnabled !== undefined) {
+      store.set("quickReplyEnabled", (config as Partial<ConfigSchema>).quickReplyEnabled === true);
+    }
     if (config.keywords) store.set("keywords", config.keywords);
     store.set("quickRepliesEnabled", config.quickRepliesEnabled ?? schema.quickRepliesEnabled);
     if (config.quickReplies) store.set("quickReplies", config.quickReplies);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- aiModel may not exist on older configs
     if ((config as any).aiModel) store.set("aiModel", (config as any).aiModel);
+    if ((config as Partial<ConfigSchema>).closeWindowBehavior) {
+      store.set("closeWindowBehavior", (config as Partial<ConfigSchema>).closeWindowBehavior as CloseWindowBehavior);
+    }
     
     return { status: "ok" };
   } catch (e) {

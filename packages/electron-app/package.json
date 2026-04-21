@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.bilibili.danmu-claw",
-    "productName": "BiliBili弹幕Claw",
+    "productName": "BiliBili AI弹幕姬",
     "directories": {
       "output": "../../../dist"
     },
@@ -49,6 +49,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
       "installerIcon": null,
       "include": "build/installer.nsh",
       "shortcutName": "bilibili-danmu-claw"

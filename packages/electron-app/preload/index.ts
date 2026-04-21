@@ -94,6 +94,8 @@ export interface AIConnectionStatus {
 export interface ConfigSchema {
   room: RoomConfig;
   credentials: Credentials;
+  /** 固定回复全局开关 */
+  quickReplyEnabled?: boolean;
   keywords: KeywordRule[];
   quickRepliesEnabled: boolean;
   quickReplies: QuickReplyRule[];
@@ -101,6 +103,8 @@ export interface ConfigSchema {
   aiModel: AIModelConfig;
   /** 主题模式：light / dark / system */
   theme: "light" | "dark" | "system";
+  /** 点击窗口关闭按钮（X）时行为：询问 / 托盘后台 / 直接退出 */
+  closeWindowBehavior?: "ask" | "tray" | "exit";
 }
 
 export interface DanmakuAPI {
@@ -144,6 +148,10 @@ export interface DanmakuAPI {
   setTheme: (mode: "light" | "dark" | "system") => Promise<{ resolved: "light" | "dark" }>;
   /** 监听主题变更（系统主题变化或用户手动切换） */
   onThemeChanged: (callback: (resolved: "light" | "dark") => void) => () => void;
+  /** 监听主进程发起的关闭确认请求（由渲染层展示主题化弹窗） */
+  onCloseConfirmRequested: (callback: (data: { requestId: string; message: string; detail: string }) => void) => () => void;
+  /** 向主进程回传关闭确认结果 */
+  respondCloseConfirm: (payload: { requestId: string; action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
 }
 
 const api: DanmakuAPI = {
@@ -216,6 +224,15 @@ const api: DanmakuAPI = {
     ipcRenderer.on("theme:changed", handler);
     return () => ipcRenderer.removeListener("theme:changed", handler);
   },
+  onCloseConfirmRequested: (callback) => {
+    const handler = (
+      _event: unknown,
+      data: { requestId: string; message: string; detail: string },
+    ) => callback(data);
+    ipcRenderer.on("window:closeConfirmRequested", handler);
+    return () => ipcRenderer.removeListener("window:closeConfirmRequested", handler);
+  },
+  respondCloseConfirm: (payload) => ipcRenderer.invoke("window:closeConfirmRespond", payload),
 };
 
 contextBridge.exposeInMainWorld("danmakuAPI", api);

@@ -8,7 +8,7 @@
 //   4. 进程退出清理（SIGINT / SIGTERM / window-all-closed）
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, Menu, dialog, nativeTheme } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, dialog, nativeTheme, Tray, session as electronSession } from "electron";
 import { join } from "path";
 import { DanmakuService } from "./danmaku-service";
 import { getConfig, setConfigPath, exportConfigToFile, importConfigFromFile, importConfigFromContent } from "./config-store";
@@ -52,6 +52,14 @@ let danmakuService: DanmakuService | null = null;
 let aiRelay: AIRelayManager | null = null;
 /** 固定回复引擎 */
 let quickReplyEngine: QuickReplyEngine | null = null;
+/** 系统托盘图标 */
+let appTray: Tray | null = null;
+/** 是否进入退出流程（用于区分“关闭窗口”与“真正退出应用”） */
+let isAppQuitting = false;
+/** 等待渲染进程返回关闭确认结果的 Promise resolver */
+let pendingCloseDecisionResolver: ((payload: { requestId: string; action: CloseWindowDialogAction; remember: boolean }) => void) | null = null;
+/** 当前关闭确认请求 ID */
+let pendingCloseDecisionRequestId: string | null = null;
 
 /** AI 连接状态缓存（窗口未创建时 IPC 仍可返回） */
 let latestAIStatus: AIRelayStatus = {
@@ -74,6 +82,196 @@ let latestAIStatus: AIRelayStatus = {
 /** 防止重复清理（cleanupBeforeExit 可能被多个退出信号同时触发） */
 let isCleanupRunning = false;
 
+/** 关闭窗口行为 */
+type CloseWindowBehavior = "ask" | "tray" | "exit";
+/** 关闭确认弹窗动作 */
+type CloseWindowDialogAction = "tray" | "exit" | "cancel";
+
+/** 统一应用图标路径（窗口图标 + 托盘图标） */
+function getAppIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, "resources", "icon.ico")
+    : join(__dirname, "../../build/icon.ico");
+}
+
+/** 将主窗口显示到前台 */
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+/** 将主窗口隐藏到托盘后台 */
+function hideMainWindowToTray(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+}
+
+/**
+ * 退出前清理 Electron/Chromium 运行缓存（仅清理可再生缓存，不动业务配置）。
+ * 目标：减少 Roaming 下的缓存残留，同时避免影响 config.json 等业务数据。
+ */
+async function clearElectronRuntimeCachesOnExit(): Promise<void> {
+  const sessions = new Set<Electron.Session>();
+
+  // 默认会话（主窗口通常在这里）
+  sessions.add(electronSession.defaultSession);
+
+  // 主窗口会话
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    sessions.add(mainWindow.webContents.session);
+  }
+
+  // 登录窗口会话
+  if (biliLoginWindow && !biliLoginWindow.isDestroyed()) {
+    sessions.add(biliLoginWindow.webContents.session);
+  }
+
+  for (const ses of sessions) {
+    // 每个缓存清理都带超时，避免异常阻塞退出流程
+    const withTimeout = async (fn: Promise<unknown>, timeoutMs: number): Promise<void> => {
+      await Promise.race([
+        fn.then(() => undefined).catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+      ]);
+    };
+
+    // HTTP 缓存
+    await withTimeout(ses.clearCache(), 1500);
+
+    // 仅清理可再生缓存类存储，不清理 localStorage/indexedDB/cookies
+    await withTimeout(
+      ses.clearStorageData({
+        storages: ["appcache", "shadercache", "cachestorage", "serviceworkers"],
+      }),
+      1500,
+    );
+  }
+}
+
+/**
+ * 请求渲染进程显示主题化关闭确认弹窗，并等待用户选择。
+ * 若超时或窗口不可用，默认返回 cancel，避免误退出。
+ */
+async function requestCloseDecisionFromRenderer(): Promise<{ action: CloseWindowDialogAction; remember: boolean }> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { action: "cancel", remember: false };
+  }
+
+  // 避免并发弹多个关闭确认框
+  if (pendingCloseDecisionResolver) {
+    return { action: "cancel", remember: false };
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  pendingCloseDecisionRequestId = requestId;
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingCloseDecisionResolver = null;
+      pendingCloseDecisionRequestId = null;
+      resolve({ action: "cancel", remember: false });
+    }, 60_000);
+
+    pendingCloseDecisionResolver = (payload) => {
+      if (payload.requestId !== requestId) return;
+      clearTimeout(timeout);
+      pendingCloseDecisionResolver = null;
+      pendingCloseDecisionRequestId = null;
+      resolve({ action: payload.action, remember: payload.remember });
+    };
+
+    mainWindow?.webContents.send("window:closeConfirmRequested", {
+      requestId,
+      message: "关闭窗口时你希望如何处理？",
+      detail:
+        "选择“最小化到托盘后台运行”后，弹幕接收、匹配、过滤、固定回复与 AI 回复会继续运行，可通过托盘图标恢复到前台。",
+    });
+  });
+}
+
+/** 创建托盘图标和菜单（仅创建一次） */
+function ensureTray(): void {
+  if (appTray) return;
+  appTray = new Tray(getAppIconPath());
+  appTray.setToolTip("BiliBili弹幕Claw");
+  appTray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "显示主界面",
+        click: () => showMainWindow(),
+      },
+      {
+        label: "隐藏到后台",
+        click: () => hideMainWindowToTray(),
+      },
+      { type: "separator" },
+      {
+        label: "退出",
+        click: () => {
+          isAppQuitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+
+  // 单击托盘图标：切换显示/隐藏
+  appTray.on("click", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isVisible()) {
+      hideMainWindowToTray();
+    } else {
+      showMainWindow();
+    }
+  });
+
+  // 双击托盘图标：总是显示主界面
+  appTray.on("double-click", () => {
+    showMainWindow();
+  });
+}
+
+/**
+ * 处理主窗口关闭请求：
+ * - tray: 隐藏到托盘后台运行
+ * - exit: 直接退出
+ * - ask: 弹出三选一 + 可记住本次选择
+ */
+async function handleMainWindowCloseRequest(): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const currentBehavior = (getConfig().closeWindowBehavior || "ask") as CloseWindowBehavior;
+  if (currentBehavior === "tray") {
+    hideMainWindowToTray();
+    return;
+  }
+  if (currentBehavior === "exit") {
+    isAppQuitting = true;
+    mainWindow.close();
+    return;
+  }
+
+  const result = await requestCloseDecisionFromRenderer();
+
+  if (result.action === "tray") {
+    if (result.remember) {
+      setConfigPath("closeWindowBehavior", "tray");
+    }
+    hideMainWindowToTray();
+    return;
+  }
+
+  if (result.action === "exit") {
+    if (result.remember) {
+      setConfigPath("closeWindowBehavior", "exit");
+    }
+    isAppQuitting = true;
+    mainWindow.close();
+  }
+}
+
 /** 应用退出前清理：停止弹幕服务 → 断开 AI → 关闭登录窗口 */
 async function cleanupBeforeExit(): Promise<void> {
   if (isCleanupRunning) return;
@@ -87,6 +285,10 @@ async function cleanupBeforeExit(): Promise<void> {
       }
     }
     aiRelay?.disconnect();
+
+    // 退出时清理部分 Electron 运行缓存，减少 Roaming 目录冗余文件
+    await clearElectronRuntimeCachesOnExit();
+
     if (biliLoginWindow && !biliLoginWindow.isDestroyed()) {
       try {
         biliLoginWindow.close();
@@ -94,6 +296,10 @@ async function cleanupBeforeExit(): Promise<void> {
         // ignore
       }
       biliLoginWindow = null;
+    }
+    if (appTray) {
+      appTray.destroy();
+      appTray = null;
     }
   } finally {
     isCleanupRunning = false;
@@ -104,16 +310,13 @@ async function cleanupBeforeExit(): Promise<void> {
 function createWindow(): void {
   logger.log("Creating window, dev:", logger.isDev);
 
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, "resources", "icon.ico")
-    : join(__dirname, "../../resources/icon.ico");
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
     minWidth: 700,
     minHeight: 500,
     title: "BiliBili弹幕Claw",
-    icon: iconPath,
+    icon: getAppIconPath(),
     frame: true,
     backgroundColor: "#1a1b26",
     webPreferences: {
@@ -153,6 +356,12 @@ function createWindow(): void {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  mainWindow.on("close", (event) => {
+    if (isAppQuitting) return;
+    event.preventDefault();
+    void handleMainWindowCloseRequest();
+  });
 }
 
 /**
@@ -180,17 +389,8 @@ function registerIpcHandlers(): void {
   const disconnectAIWhenDanmakuStops = (): void => {
     if (!aiRelay) return;
     if (!aiRelay.getStatus().connected) return;
-    logger.log("Disconnecting AI because danmaku listener is offline");
     aiRelay.disconnect();
     latestAIStatus = aiRelay.getStatus();
-  };
-
-  /** 将固定回复运行时状态与当前配置同步 */
-  const syncQuickReplyEngineFromConfig = (): void => {
-    if (!quickReplyEngine) return;
-    const config = getConfig();
-    quickReplyEngine.setEnabled(config.quickRepliesEnabled === true);
-    quickReplyEngine.updateRules(config.quickReplies || []);
   };
 
   // ─── 初始化子模块 ─────────────────────────────────────────
@@ -212,7 +412,10 @@ function registerIpcHandlers(): void {
   /** 固定回复引擎：关键词命中后直接发送预设文本 */
   if (!quickReplyEngine) {
     quickReplyEngine = new QuickReplyEngine();
-    syncQuickReplyEngineFromConfig();
+    const initialConfig = getConfig();
+    if (initialConfig.quickReplies) {
+      quickReplyEngine.updateRules(initialConfig.quickReplies);
+    }
   }
 
   // ─── 弹幕服务 IPC ─────────────────────────────────────────
@@ -249,7 +452,9 @@ danmakuService.on("danmaku", (data) => {
           quickReplyEligible = true;
         }
 
-        if (quickReplyEligible) {
+        // 固定回复全局开关：关闭时完全不触发固定回复
+        const quickReplyEnabled = getConfig().quickReplyEnabled === true;
+        if (quickReplyEligible && quickReplyEnabled) {
           const quickMatch = quickReplyEngine?.match(content);
           if (quickMatch && danmakuService) {
             danmakuService.sendDanmaku({ msg: quickMatch.reply }).catch(() => {});
@@ -366,11 +571,36 @@ danmakuService.on("danmaku", (data) => {
   /** 更新固定回复规则列表 */
   ipcMain.handle("quickReplies:update", async (_event, rules) => {
     setConfigPath("quickReplies", rules);
-    syncQuickReplyEngineFromConfig();
+    if (quickReplyEngine) {
+      quickReplyEngine.updateRules(rules);
+    }
     return { status: "ok" };
   });
 
   // ─── 配置 IPC ─────────────────────────────────────────────
+
+  /** 渲染进程返回关闭确认弹窗结果 */
+  ipcMain.handle(
+    "window:closeConfirmRespond",
+    async (
+      _event,
+      payload: { requestId?: string; action?: CloseWindowDialogAction; remember?: boolean },
+    ) => {
+      const requestId = String(payload?.requestId || "");
+      const action = payload?.action;
+      const remember = Boolean(payload?.remember);
+
+      if (!requestId || !pendingCloseDecisionRequestId || requestId !== pendingCloseDecisionRequestId) {
+        return { status: "ignored" };
+      }
+      if (action !== "tray" && action !== "exit" && action !== "cancel") {
+        return { status: "ignored" };
+      }
+
+      pendingCloseDecisionResolver?.({ requestId, action, remember });
+      return { status: "ok" };
+    },
+  );
 
   /** 导入配置后同步到运行时引擎 */
   const syncConfigToEngines = (): void => {
@@ -378,7 +608,9 @@ danmakuService.on("danmaku", (data) => {
       danmakuService.updateKeywords(getConfig().keywords);
       danmakuService.updateMinMedalLevel(getConfig().room?.minMedalLevel || 0);
     }
-    syncQuickReplyEngineFromConfig();
+    if (quickReplyEngine) {
+      quickReplyEngine.updateRules(getConfig().quickReplies || []);
+    }
   };
 
   /** 读取完整配置 */
@@ -390,9 +622,6 @@ danmakuService.on("danmaku", (data) => {
   ipcMain.handle("config:set", async (_event, key: string, value: unknown) => {
     try {
       setConfigPath(key, value);
-      if (key === "quickRepliesEnabled" || key === "quickReplies") {
-        syncQuickReplyEngineFromConfig();
-      }
       return { status: "ok" };
     } catch (e: unknown) {
       return { status: "error", message: String(e) };
@@ -691,6 +920,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   
   createWindow();
+  ensureTray();
   registerIpcHandlers();
 });
 
@@ -704,21 +934,25 @@ app.on("window-all-closed", async () => {
 
 /** 退出前清理（防止资源泄露） */
 app.on("before-quit", async () => {
+  isAppQuitting = true;
   await cleanupBeforeExit();
 });
 
 /** 进程信号处理（Ctrl+C / kill） */
 process.on("SIGINT", () => {
+  isAppQuitting = true;
   void cleanupBeforeExit().finally(() => process.exit(0));
 });
 
 process.on("SIGTERM", () => {
+  isAppQuitting = true;
   void cleanupBeforeExit().finally(() => process.exit(0));
 });
 
 /** 未捕获异常 → 记录日志 → 清理 → 非零退出 */
 process.on("uncaughtException", (err) => {
   console.error("[Main] uncaughtException:", err);
+  isAppQuitting = true;
   void cleanupBeforeExit().finally(() => process.exit(1));
 });
 

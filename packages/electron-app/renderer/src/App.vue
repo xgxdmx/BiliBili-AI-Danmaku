@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, provide, onMounted } from "vue";
+import { ref, provide, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
 const router = useRouter();
+
+type CloseDialogAction = "tray" | "exit" | "cancel";
 
 // 程序关闭时清空缓存 - 启动时默认为空
 const STORAGE_KEY = "bilibili-danmaku-cache";
@@ -27,6 +29,36 @@ function scheduleSave() {
   }, 2000) as any;
 }
 
+// ─── 关闭确认弹窗（主题化） ──────────────────────────────────
+
+/** 是否显示“点击 X”关闭确认弹窗 */
+const closeDialogVisible = ref(false);
+/** 本次主进程关闭请求 ID，用于回传时防串单 */
+const closeDialogRequestId = ref("");
+/** 弹窗标题文本 */
+const closeDialogMessage = ref("关闭窗口时你希望如何处理？");
+/** 弹窗补充说明 */
+const closeDialogDetail = ref("");
+/** 是否记住当前选择 */
+const closeDialogRemember = ref(false);
+
+/** 向主进程提交关闭确认结果 */
+async function submitCloseDialogDecision(action: CloseDialogAction): Promise<void> {
+  const requestId = closeDialogRequestId.value;
+  if (!requestId) return;
+  try {
+    await window.danmakuAPI.respondCloseConfirm({
+      requestId,
+      action,
+      remember: closeDialogRemember.value,
+    });
+  } finally {
+    closeDialogVisible.value = false;
+    closeDialogRequestId.value = "";
+    closeDialogRemember.value = false;
+  }
+}
+
 // ─── 主题管理 ──────────────────────────────────────────────
 
 /** 将解析后的主题应用到 DOM 根节点 */
@@ -35,6 +67,9 @@ function applyTheme(resolved: "light" | "dark"): void {
 }
 
 // 启动时加载主题
+let unsubscribeThemeChanged: (() => void) | null = null;
+let unsubscribeCloseConfirmRequested: (() => void) | null = null;
+
 onMounted(async () => {
   try {
     const result = await window.danmakuAPI?.getTheme();
@@ -42,9 +77,23 @@ onMounted(async () => {
   } catch { /* 忽略 */ }
 
   // 监听主题变更（系统主题变化或用户手动切换）
-  window.danmakuAPI?.onThemeChanged?.((resolved) => {
+  unsubscribeThemeChanged = window.danmakuAPI?.onThemeChanged?.((resolved) => {
     applyTheme(resolved);
-  });
+  }) || null;
+
+  // 监听主进程发起的关闭确认请求，显示应用内主题化弹窗
+  unsubscribeCloseConfirmRequested = window.danmakuAPI?.onCloseConfirmRequested?.((data) => {
+    closeDialogRequestId.value = data.requestId;
+    closeDialogMessage.value = data.message || "关闭窗口时你希望如何处理？";
+    closeDialogDetail.value = data.detail || "";
+    closeDialogRemember.value = false;
+    closeDialogVisible.value = true;
+  }) || null;
+});
+
+onUnmounted(() => {
+  unsubscribeThemeChanged?.();
+  unsubscribeCloseConfirmRequested?.();
 });
 
 // ─── 弹幕缓存 ──────────────────────────────────────────────
@@ -178,6 +227,29 @@ const icons: Record<string, string> = {
     <main class="main-area">
       <router-view />
     </main>
+
+    <!-- 点击 X 时的主题化关闭确认弹窗 -->
+    <div
+      v-if="closeDialogVisible"
+      class="close-modal-mask"
+      @click="submitCloseDialogDecision('cancel')"
+    >
+      <div class="close-modal-card" @click.stop>
+        <h3 class="close-modal-title">{{ closeDialogMessage }}</h3>
+        <p class="close-modal-detail">{{ closeDialogDetail }}</p>
+
+        <label class="close-modal-remember">
+          <input v-model="closeDialogRemember" type="checkbox" />
+          <span>下次不再提示（记住本次选择）</span>
+        </label>
+
+        <div class="close-modal-actions">
+          <button class="btn btn-muted" @click="submitCloseDialogDecision('cancel')">取消</button>
+          <button class="btn btn-muted" @click="submitCloseDialogDecision('exit')">退出程序</button>
+          <button class="btn btn-accent" @click="submitCloseDialogDecision('tray')">最小化到后台</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -282,5 +354,59 @@ const icons: Record<string, string> = {
   flex: 1;
   overflow: auto;
   background: var(--bg-primary);
+}
+
+.close-modal-mask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #00000066;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.close-modal-card {
+  width: min(560px, calc(100vw - 32px));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 14px 36px #00000045;
+}
+
+.close-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.close-modal-detail {
+  margin-top: 8px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.close-modal-remember {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.close-modal-remember input {
+  width: auto;
+}
+
+.close-modal-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>
