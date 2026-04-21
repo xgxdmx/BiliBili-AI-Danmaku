@@ -57,28 +57,26 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            test -f packages/danmaku-core/run.exe
-            test -f packages/danmaku-core/receiver.exe
-            test -f packages/danmaku-core/sender.exe
+            test -f packages/danmaku-core/runtime/run/run.exe
           else
-            test -f packages/danmaku-core/run
-            test -f packages/danmaku-core/receiver
-            test -f packages/danmaku-core/sender
+            test -f packages/danmaku-core/runtime/run/run
           fi
 
       - name: Verify packaged app contains danmaku-core binaries (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $base = Join-Path $PWD "dist\win-unpacked\resources\danmaku-core"
+          $base = Join-Path $PWD "dist\win-unpacked\resources\danmaku-core\run"
           if (!(Test-Path $base)) {
             Write-Error "Packaged danmaku-core directory missing: $base"
           }
-          @("run.exe", "receiver.exe", "sender.exe") | ForEach-Object {
-            $target = Join-Path $base $_
-            if (!(Test-Path $target)) {
-              Write-Error "Missing packaged binary: $target"
-            }
+          $target = Join-Path $base "run.exe"
+          if (!(Test-Path $target)) {
+            Write-Error "Missing packaged runtime executable: $target"
+          }
+          & $target 2>&1 | Out-String | Write-Host
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) {
+            Write-Error "Packaged runtime failed to launch, exit code: $LASTEXITCODE"
           }
 
       - name: Verify packaged app contains danmaku-core binaries (macOS)
@@ -87,11 +85,48 @@ jobs:
         run: |
           app_dir=$(find dist -maxdepth 2 -type d -name "*.app" | head -n 1)
           test -n "$app_dir"
-          base="$app_dir/Contents/Resources/danmaku-core"
+          base="$app_dir/Contents/Resources/danmaku-core/run"
           test -d "$base"
           test -f "$base/run"
-          test -f "$base/receiver"
-          test -f "$base/sender"
+
+      - name: Verify NSIS installer output can be installed (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist -Filter *.exe -File |
+            Where-Object { $_.Name -notmatch 'BiliBili.*unins' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) {
+            Write-Error "NSIS installer not found in dist/"
+          }
+
+          $installDir = Join-Path $env:RUNNER_TEMP "danmuclaw-install"
+          if (Test-Path $installDir) {
+            Remove-Item -Path $installDir -Recurse -Force
+          }
+
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S","/D=$installDir" -Wait
+
+          $appExe = Join-Path $installDir "BiliBili弹幕Claw.exe"
+          $runtimeExe = Join-Path $installDir "resources\danmaku-core\run\run.exe"
+
+          if (!(Test-Path $appExe)) {
+            Write-Error "Installed app executable missing: $appExe"
+          }
+          if (!(Test-Path $runtimeExe)) {
+            Write-Error "Installed runtime executable missing: $runtimeExe"
+          }
+
+          & $runtimeExe 2>&1 | Out-String | Write-Host
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1) {
+            Write-Error "Installed runtime failed to launch, exit code: $LASTEXITCODE"
+          }
+
+          $uninstaller = Join-Path $installDir "Uninstall BiliBili弹幕Claw.exe"
+          if (Test-Path $uninstaller) {
+            Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait
+          }
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4

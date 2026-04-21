@@ -1,441 +1,342 @@
 #!/usr/bin/env node
-/**
- * Bilibili弹幕Claw — 一键构建脚本 (跨平台)
- *
- * 将 Python 弹幕核心打包为可执行文件，与 Electron 桌面客户端一起
- * 产出平台安装包 (Windows NSIS / macOS DMG / Linux AppImage)。
- *
- * ┌─────────────────────────────────────────────────────────────┐
- * │  用法                                                        │
- * │                                                              │
- * │  pnpm package            完整打包 (Python + Electron)         │
- * │  pnpm package:python     仅打包 Python 产物                   │
- * │  pnpm package:electron   仅打包 Electron 安装包               │
- * │  pnpm package:clean      清理所有构建产物                      │
- * └─────────────────────────────────────────────────────────────┘
- *
- * 构建流程总览：
- *
- *   ┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
- *   │ Python 构建   │ ──▶ │  复制到        │ ──▶ │  Electron 打包    │
- *   │ (PyInstaller) │     │  danmaku-core/ │     │  (electron-builder)│
- *   └──────────────┘     └───────────────┘     └──────────────────┘
- *         │                                            │
- *    run.exe / run                                  dist/
- *    receiver.exe / receiver             BiliBili弹幕Claw Setup.exe (Win)
- *    sender.exe / sender                BiliBili弹幕Claw.dmg (Mac)
- *                                        BiliBili弹幕Claw.AppImage (Linux)
- *
- * 所有最终产物输出到项目根目录的 dist/ 文件夹。
- */
 
-import { execSync } from 'child_process';
-import { existsSync, rmSync, copyFileSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { execFileSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  平台检测                                                         ║
-// ║  根据 process.platform 决定二进制扩展名、构建目标等                    ║
-// ╚══════════════════════════════════════════════════════════════════╝
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, "..");
+const DANMAKU_CORE = path.join(ROOT, "packages", "danmaku-core");
+const ELECTRON_APP = path.join(ROOT, "packages", "electron-app");
+const SHARED = path.join(ROOT, "packages", "shared");
+const PY_DIST_ROOT = path.join(ROOT, ".build", "python-dist");
+const PY_WORK_ROOT = path.join(ROOT, ".build", "python-work");
+const RUNTIME_ROOT = path.join(DANMAKU_CORE, "runtime");
+const RUNTIME_RUN_DIR = path.join(RUNTIME_ROOT, "run");
 
-const isWin = process.platform === 'win32';
-const isMac = process.platform === 'darwin';
+const isWin = process.platform === "win32";
+const isMac = process.platform === "darwin";
 
-/** Windows 下 Python 可执行文件带 .exe 后缀，macOS/Linux 无后缀 */
-const PY_BIN_EXT = isWin ? '.exe' : '';
-const PY_OUT_EXT = isWin ? '.exe' : '';
+const CYAN = "\x1b[36m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const RED = "\x1b[31m";
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
 
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  路径常量                                                         ║
-// ╚══════════════════════════════════════════════════════════════════╝
+function logStep(msg) { console.log(`\n${BOLD}${CYAN}━━━ ${msg} ━━━${RESET}\n`); }
+function logOk(msg) { console.log(`  ${GREEN}✔${RESET} ${msg}`); }
+function logInfo(msg) { console.log(`  ${YELLOW}→${RESET} ${msg}`); }
+function logFail(msg) { console.error(`  ${RED}✖${RESET} ${msg}`); }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT          = join(__dirname, '..');                        // 项目根目录
-const DANMAKU_CORE  = join(ROOT, 'packages', 'danmaku-core');      // Python 弹幕核心
-const ELECTRON_APP  = join(ROOT, 'packages', 'electron-app');      // Electron 桌面客户端
-const SHARED        = join(ROOT, 'packages', 'shared');             // 共享类型定义
-
-/**
- * 获取 venv 中的 Python 路径
- * - Windows: .venv/Scripts/python.exe
- * - macOS/Linux: .venv/bin/python
- */
-function getVenvPython() {
-  if (isWin) return join(ROOT, '.venv', 'Scripts', 'python.exe');
-  return join(ROOT, '.venv', 'bin', 'python');
+function run(cmd, args, options = {}) {
+  const cwd = options.cwd || ROOT;
+  logInfo([cmd, ...args].join(" "));
+  execFileSync(cmd, args, {
+    cwd,
+    stdio: "inherit",
+    env: { ...process.env, ...options.env },
+  });
 }
 
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  日志工具 — 彩色终端输出                                           ║
-// ╚══════════════════════════════════════════════════════════════════╝
+function tryRun(cmd, args, options = {}) {
+  try {
+    run(cmd, args, options);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-const CYAN  = '\x1b[36m';
-const GREEN = '\x1b[32m';
-const YELLOW = '\x1b[33m';
-const RED   = '\x1b[31m';
-const BOLD  = '\x1b[1m';
-const RESET = '\x1b[0m';
+function ensureDir(dir) {
+  mkdirSync(dir, { recursive: true });
+}
 
-/** 阶段标题：━━━ Python: find interpreter ━━━ */
-function logStep(msg)  { console.log(`\n${BOLD}${CYAN}━━━ ${msg} ━━━${RESET}\n`); }
-/** ✔ 成功 */
-function logOk(msg)   { console.log(`  ${GREEN}✔${RESET} ${msg}`); }
-/** ✖ 失败（输出到 stderr） */
-function logFail(msg)  { console.error(`  ${RED}✖${RESET} ${msg}`); }
-/** → 命令/信息 */
-function logInfo(msg)  { console.log(`  ${YELLOW}→${RESET} ${msg}`); }
-/** ⚠ 警告 */
-function logWarn(msg)  { console.log(`  ${YELLOW}⚠${RESET} ${msg}`); }
+function removeIfExists(target) {
+  if (existsSync(target)) {
+    rmSync(target, { recursive: true, force: true });
+  }
+}
 
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  通用工具函数                                                     ║
-// ╚══════════════════════════════════════════════════════════════════╝
+function requirePath(target, label) {
+  if (!existsSync(target)) {
+    logFail(`${label} not found: ${target}`);
+    process.exit(1);
+  }
+}
 
-/**
- * 查找系统可用的 Python 解释器
- * 优先级: .venv > python3 > python
- * @returns {string|null} Python 可执行文件路径，未找到返回 null
- */
+function readJson(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function writeJson(filePath, value) {
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function getPnpmCmd() {
+  return isWin ? "pnpm.cmd" : "pnpm";
+}
+
+function getVenvPython() {
+  return isWin
+    ? path.join(ROOT, ".venv", "Scripts", "python.exe")
+    : path.join(ROOT, ".venv", "bin", "python");
+}
+
 function getPythonExe() {
   const venvPython = getVenvPython();
   if (existsSync(venvPython)) return venvPython;
-  for (const cmd of ['python3', 'python']) {
-    try { execSync(`${cmd} --version`, { stdio: 'ignore' }); return cmd; }
-    catch { /* 继续尝试下一个 */ }
+
+  const candidates = isWin ? ["python", "py"] : ["python3", "python"];
+  for (const cmd of candidates) {
+    if (tryRun(cmd, ["--version"])) {
+      return cmd;
+    }
   }
   return null;
 }
 
-/**
- * 执行 shell 命令并实时输出
- * @param {string} cmd  - 要执行的命令
- * @param {object} opts - 选项，支持 cwd 指定工作目录
- * @returns {boolean} 命令是否成功 (exit code === 0)
- */
-function run(cmd, opts = {}) {
-  const cwd = opts.cwd || ROOT;
-  const runOpts = { ...opts }; delete runOpts.cwd;
-  logInfo(cmd);
-  try {
-    execSync(cmd, { stdio: 'inherit', cwd, ...runOpts });
-    return true;
-  } catch { return false; }
-}
-
-/**
- * 检查文件是否存在，不存在则报错退出
- * @param {string} filepath - 文件路径
- * @param {string} label    - 友好名称（用于错误消息）
- */
-function requireFile(filepath, label) {
-  if (!existsSync(filepath)) {
-    logFail(`${label} not found: ${filepath}`);
-    process.exit(1);
-  }
-}
-
-/**
- * 检查 Python 核心二进制是否已就位
- * @param {string} dir - 目标目录
- * @param {string[]} bins - 必需文件列表
- * @param {string} hint - 缺失时附加提示
- */
-function requirePythonBinaries(dir, bins, hint = '') {
-  const missing = bins.filter((bin) => !existsSync(join(dir, bin)));
-  if (missing.length === 0) return;
-
-  for (const bin of missing) {
-    logFail(`Python binary not found: ${join(dir, bin)}`);
-  }
-  if (hint) logFail(hint);
-  process.exit(1);
-}
-
-/**
- * 用 pip show 检查 Python 包是否已安装
- * 避免重复安装（尤其解决 aiohttp 在 Python 3.13 上源码编译失败的问题）
- * @param {string} python - Python 路径
- * @param {string} pkg    - 包名 (pip show 的名称)
- * @returns {boolean}
- */
 function pipPackageExists(python, pkg) {
   try {
-    execSync(`"${python}" -m pip show "${pkg}"`, { stdio: 'pipe', encoding: 'utf8' });
+    execFileSync(python, ["-m", "pip", "show", pkg], { stdio: "ignore" });
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-/**
- * 根据 当前平台返回 electron-builder 的构建目标参数
- * Windows → --win nsis | macOS → --mac dmg zip | Linux → --linux AppImage
- * @returns {string}
- */
 function getElectronBuilderTarget() {
-  if (isWin) return '--win nsis';
-  if (isMac) return '--mac dmg zip';
-  return '--linux AppImage';
+  if (isWin) return ["--win", "nsis"];
+  if (isMac) return ["--mac", "dmg", "zip"];
+  return ["--linux", "AppImage"];
 }
 
-/** 返回当前平台的人类可读名称，用于日志输出 */
 function getPlatformLabel() {
-  if (isWin) return 'Windows (NSIS)';
-  if (isMac) return 'macOS (DMG)';
-  return 'Linux (AppImage)';
+  if (isWin) return "Windows";
+  if (isMac) return "macOS";
+  return "Linux";
 }
-
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  clean — 清理所有构建产物                                         ║
-// ║                                                                    ║
-// ║  删除以下目录：                                                     ║
-// ║    根目录/build      PyInstaller 的工作目录                        ║
-// ║    根目录/dist       PyInstaller 的输出 + 最终安装包                  ║
-// ║    danmaku-core/build   PyInstaller 子进程可能产生的残留               ║
-// ║    danmaku-core/dist    同上                                         ║
-// ║    electron-app/out     electron-vite 的编译输出                     ║
-// ║    electron-app/dist    electron-builder 的打包输出                    ║
-// ║    electron-app/.deploy 部署暂存目录                                  ║
-// ║    shared/dist          TypeScript 编译输出                         ║
-// ║  以及 danmaku-core/ 下的可执行文件和根目录的 .tgz                    ║
-// ╚══════════════════════════════════════════════════════════════════╝
 
 function clean() {
-  logStep('Clean build artifacts');
+  logStep("Clean build artifacts");
 
   const dirs = [
-    join(ROOT, 'build'),         join(ROOT, 'dist'),
-    join(DANMAKU_CORE, 'build'),  join(DANMAKU_CORE, 'dist'),
-    join(ELECTRON_APP, 'out'),    join(ELECTRON_APP, 'dist'),
-    join(ELECTRON_APP, '.deploy'),
-    join(SHARED, 'dist'),
+    path.join(ROOT, "dist"),
+    path.join(ROOT, ".build"),
+    path.join(ELECTRON_APP, "out"),
+    path.join(ELECTRON_APP, "dist"),
+    path.join(ELECTRON_APP, ".deploy"),
+    path.join(SHARED, "dist"),
+    RUNTIME_ROOT,
   ];
 
-  for (const d of dirs) {
-    if (existsSync(d)) { logInfo(`Delete ${d}`); rmSync(d, { recursive: true, force: true }); }
+  for (const dir of dirs) {
+    removeIfExists(dir);
   }
 
-  // 清理 danmaku-core 中的 Python 可执行文件（打包产物）
-  for (const name of ['run', 'receiver', 'sender']) {
-    const bin = join(DANMAKU_CORE, name + PY_BIN_EXT);
-    if (existsSync(bin)) { logInfo(`Delete ${bin}`); rmSync(bin, { force: true }); }
+  for (const legacyName of ["run.exe", "receiver.exe", "sender.exe", "run", "receiver", "sender"]) {
+    removeIfExists(path.join(DANMAKU_CORE, legacyName));
   }
 
-  // 清理 pnpm pack 生成的 .tgz（与我们的构建无关）
-  const tgz = join(ROOT, 'bilibili-danmaku-claw-0.1.0.tgz');
-  if (existsSync(tgz)) rmSync(tgz, { force: true });
-
-  logOk('Clean done');
+  logOk("Clean done");
 }
 
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  buildPython — 构建 Python 弹幕核心                                ║
-// ║                                                                    ║
-// ║  流程：                                                            ║
-// ║    1. 查找 Python 解释器 (.venv 优先)                              ║
-// ║    2. 检查并安装 pip 依赖 (仅缺失的)                                  ║
-// ║    3. 用 PyInstaller 将 .py 打包为可执行文件                          ║
-// ║    4. 复制可执行文件到 packages/danmaku-core/                        ║
-// ╚══════════════════════════════════════════════════════════════════╝
+function installPythonDeps(python) {
+  logStep("Python: check dependencies");
 
-function buildPython() {
-  // ── 步骤 1: 查找 Python ──────────────────────────────────────────
-  logStep('Python: find interpreter');
-  const python = getPythonExe();
-  if (!python) {
-    logFail('Python not found. Install Python 3.10+ or activate .venv');
+  const requirements = ["blivedm", "aiohttp", "brotli", "pyinstaller"];
+  const missing = requirements.filter((pkg) => !pipPackageExists(python, pkg));
+  if (missing.length === 0) {
+    logOk("All Python dependencies already installed");
+    return;
+  }
+
+  if (!tryRun(python, ["-m", "pip", "install", "--prefer-binary", ...missing])) {
+    logFail("Failed to install Python dependencies");
     process.exit(1);
   }
-  const pyVer = execSync(`"${python}" --version`, { encoding: 'utf8' }).trim();
-  logOk(`Using ${pyVer} (${python})`);
 
-  // ── 步骤 2: 检查并安装依赖 ──────────────────────────────────────
-  // 只安装 pip show 报告为未安装的包，避免重复安装导致
-  // aiohttp 等需要源码编译的包在 Python 3.13 上编译失败
-  logStep('Python: check dependencies');
-
-  // [pip show 名称, pip install 指定版本]
-  const PIP_PKGS = [
-    ['blivedm',     'blivedm'],
-    ['aiohttp',     'aiohttp'],
-    ['brotli',      'brotli'],
-    ['pyinstaller', 'pyinstaller'],
-  ];
-
-  const missing = PIP_PKGS.filter(([pkg]) => !pipPackageExists(python, pkg));
-
-  if (missing.length > 0) {
-    const installSpecs = missing.map(([, spec]) => spec);
-    logInfo(`Installing: ${installSpecs.join(', ')}`);
-    const ok = run(`"${python}" -m pip install ${installSpecs.join(' ')} --prefer-binary`);
-    if (!ok) {
-      logFail('Failed to install Python dependencies.');
-      if (isWin) {
-        logFail('If aiohttp fails to build, install Visual C++ Build Tools:');
-        logFail('  https://visualstudio.microsoft.com/visual-cpp-build-tools/');
-      } else {
-        logFail('Make sure you have C compiler (Xcode CLT on macOS, gcc on Linux).');
-      }
-      logFail('Or use Python 3.12 which has prebuilt aiohttp wheels.');
-      process.exit(1);
-    }
-    logOk('Dependencies installed');
-  } else {
-    logOk('All dependencies already installed — skipping pip install');
-  }
-
-  // ── 步骤 3: PyInstaller 打包 ─────────────────────────────────────
-  // 三个入口: run (JSON-RPC 服务器), receiver (弹幕接收), sender (弹幕发送)
-  logStep('Python: build binary (PyInstaller)');
-
-  const specFiles = [
-    { name: 'run',      file: 'run.spec' },       // JSON-RPC 服务器入口
-    { name: 'receiver', file: 'receiver.spec' },   // 弹幕接收器
-    { name: 'sender',   file: 'sender.spec' },     // 弹幕发送器
-  ];
-
-  // 确保输出目录存在
-  mkdirSync(join(ROOT, 'dist'), { recursive: true });
-  mkdirSync(join(ROOT, 'build'), { recursive: true });
-
-  for (const { name, file } of specFiles) {
-    const specPath = join(ROOT, file);
-    requireFile(specPath, `${name}.spec`);
-
-    const outName = name + PY_OUT_EXT; // Windows: run.exe, macOS: run
-    logInfo(`Building ${outName}...`);
-    if (!run(`"${python}" -m PyInstaller "${specPath}" --noconfirm --distpath "${join(ROOT, 'dist')}" --workpath "${join(ROOT, 'build')}"`)) {
-      logFail(`Failed to build ${outName}`);
-      process.exit(1);
-    }
-    logOk(`${outName} built`);
-  }
-
-  // ── 步骤 4: 复制可执行文件到 danmaku-core ──────────────────────
-  // electron-builder 打包时会将 danmaku-core/ 作为 extraResource 打入安装包
-  logStep('Python: copy binary to packages/danmaku-core/');
-  for (const { name } of specFiles) {
-    const outName = name + PY_OUT_EXT;
-    // 从根目录 dist/ 复制到 packages/danmaku-core/
-    const src = join(ROOT, 'dist', outName);
-    const dst = join(DANMAKU_CORE, outName);
-    requireFile(src, outName);
-    copyFileSync(src, dst);
-    logOk(`${outName} -> packages/danmaku-core/`);
-  }
-
-  // macOS 下 PyInstaller 可能还会生成 .app bundle，提示用户
-  if (isMac) {
-    for (const { name } of specFiles) {
-      const appBundle = join(ROOT, 'dist', `${name}.app`);
-      if (existsSync(appBundle)) {
-        logInfo(`Found ${name}.app bundle (macOS) — not bundled into Electron`);
-      }
-    }
-  }
-
-  console.log(`\n${BOLD}${GREEN}Python build complete!${RESET}`);
+  logOk(`Installed Python dependencies: ${missing.join(", ")}`);
 }
 
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  buildElectron — 构建 Electron 桌面客户端安装包                    ║
-// ║                                                                    ║
-// ║  流程：                                                            ║
-// ║    0. 检查 Python 可执行文件是否就位                                ║
-// ║    1. pnpm install  安装 Node 依赖                                  ║
-// ║    2. pnpm build    编译 TypeScript (shared → electron-app)         ║
-// ║    3. prepare-deploy  准备部署目录 (复制产物 + 安装生产依赖)          ║
-// ║    4. electron-builder 打包安装包                                   ║
-// ║    5. finalize        验证输出                                      ║
-// ╚══════════════════════════════════════════════════════════════════╝
+function buildPython() {
+  logStep("Python: find interpreter");
+  const python = getPythonExe();
+  if (!python) {
+    logFail("Python not found. Install Python 3.10+ or activate .venv");
+    process.exit(1);
+  }
+
+  const version = execFileSync(python, ["--version"], { encoding: "utf8" }).trim();
+  logOk(`Using ${version} (${python})`);
+
+  installPythonDeps(python);
+
+  logStep("Python: build onedir runtime");
+  removeIfExists(PY_DIST_ROOT);
+  removeIfExists(PY_WORK_ROOT);
+  removeIfExists(RUNTIME_ROOT);
+  for (const legacyName of ["run.exe", "receiver.exe", "sender.exe", "run", "receiver", "sender"]) {
+    removeIfExists(path.join(DANMAKU_CORE, legacyName));
+  }
+  ensureDir(PY_DIST_ROOT);
+  ensureDir(PY_WORK_ROOT);
+  ensureDir(RUNTIME_ROOT);
+
+  const specPath = path.join(ROOT, "run.spec");
+  requirePath(specPath, "run.spec");
+
+  run(python, [
+    "-m",
+    "PyInstaller",
+    specPath,
+    "--noconfirm",
+    "--clean",
+    "--distpath",
+    PY_DIST_ROOT,
+    "--workpath",
+    PY_WORK_ROOT,
+  ]);
+
+  const builtRuntimeDir = path.join(PY_DIST_ROOT, "run");
+  const runtimeExe = path.join(builtRuntimeDir, isWin ? "run.exe" : "run");
+  requirePath(runtimeExe, "Python runtime executable");
+  smokeTestRuntime(runtimeExe, "Built Python runtime");
+
+  cpSync(builtRuntimeDir, RUNTIME_RUN_DIR, { recursive: true });
+  requirePath(path.join(RUNTIME_RUN_DIR, isWin ? "run.exe" : "run"), "Staged Python runtime");
+
+  logOk(`Staged runtime: ${RUNTIME_RUN_DIR}`);
+}
+
+function verifyRuntimeStaged() {
+  const runtimeExe = path.join(RUNTIME_RUN_DIR, isWin ? "run.exe" : "run");
+  requirePath(RUNTIME_RUN_DIR, "Runtime directory");
+  requirePath(runtimeExe, "Runtime executable");
+}
+
+function smokeTestRuntime(runtimeExe, label) {
+  logStep(`Runtime smoke test: ${label}`);
+  requirePath(runtimeExe, label);
+
+  try {
+    const output = execFileSync(runtimeExe, [], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    const preview = output.trim().split("\n").slice(0, 2).join(" | ");
+    logOk(`${label} launched successfully${preview ? `: ${preview}` : ""}`);
+    return;
+  } catch (error) {
+    const stdout = error.stdout?.toString?.("utf8") ?? "";
+    const stderr = error.stderr?.toString?.("utf8") ?? "";
+    const combined = `${stdout}\n${stderr}`.trim();
+    const accepted = combined.includes("Usage: python run.py") || combined.includes("Unknown mode");
+
+    if (accepted) {
+      const preview = combined.split("\n").slice(0, 2).join(" | ");
+      logOk(`${label} launched successfully: ${preview}`);
+      return;
+    }
+
+    logFail(`${label} failed to launch`);
+    if (combined) {
+      console.error(combined);
+    } else if (error.message) {
+      console.error(error.message);
+    }
+    process.exit(1);
+  }
+}
+
+function patchDeployPackage() {
+  const deployPkgPath = path.join(ELECTRON_APP, ".deploy", "package.json");
+  requirePath(deployPkgPath, ".deploy/package.json");
+
+  const pkg = readJson(deployPkgPath);
+  const build = pkg.build || {};
+  const nsis = build.nsis || {};
+
+  if (isWin) {
+    nsis.runAfterFinish = false;
+    nsis.warningsAsErrors = true;
+  }
+
+  build.nsis = nsis;
+  pkg.build = build;
+  writeJson(deployPkgPath, pkg);
+
+  if (isWin) {
+    logOk("Patched Windows NSIS config: runAfterFinish=false");
+  }
+}
+
+function verifyPackagedRuntime() {
+  logStep(`Electron: verify packaged runtime (${getPlatformLabel()})`);
+
+  if (isWin) {
+    const packagedRuntimeExe = path.join(ROOT, "dist", "win-unpacked", "resources", "danmaku-core", "run", "run.exe");
+    requirePath(packagedRuntimeExe, "Packaged Windows runtime");
+    smokeTestRuntime(packagedRuntimeExe, "Packaged Windows runtime");
+    return;
+  }
+
+  logInfo("Packaged runtime verification is only implemented for Windows in this script");
+}
 
 function buildElectron() {
-  const target = getElectronBuilderTarget();     // e.g. "--win nsis"
-  const platformLabel = getPlatformLabel();       // e.g. "Windows (NSIS)"
-  const requiredBins = ['run', 'receiver', 'sender'].map(n => n + PY_BIN_EXT);
+  logStep(`Electron: prepare package (${getPlatformLabel()})`);
+  verifyRuntimeStaged();
 
-  // ── 步骤 0: 检查 Python 产物是否存在 ─────────────────────────────
-  // electron-builder 会将 danmaku-core/ 目录整体打入安装包，
-  // 如果没有可执行文件则会打包一个不能运行的应用
-  requirePythonBinaries(
-    DANMAKU_CORE,
-    requiredBins,
-    'Run "pnpm package:python" first, or make sure CI builds on the target OS before packaging Electron.'
-  );
+  const pnpmCmd = getPnpmCmd();
+  const installArgs = process.env.CI ? ["install", "--frozen-lockfile"] : ["install"];
 
-  // ── 步骤 1: 安装 Node 依赖 ────────────────────────────────────────
-  logStep('Electron: install Node dependencies');
-  if (!run('pnpm install')) { logFail('pnpm install failed'); process.exit(1); }
-  logOk('Node dependencies installed');
+  run(pnpmCmd, installArgs);
+  run(pnpmCmd, ["build"]);
+  run(pnpmCmd, ["--filter", "bilibili-danmu-claw-electron-app", "run", "prepare-deploy"]);
 
-  // ── 步骤 2: 编译 TypeScript ──────────────────────────────────────
-  // shared → electron-app (包括 electron-vite build 输出到 out/)
-  logStep('Electron: build TypeScript');
-  if (!run('pnpm build')) { logFail('TypeScript build failed'); process.exit(1); }
-  logOk('TypeScript build complete');
+  const deployDir = path.join(ELECTRON_APP, ".deploy");
+  requirePath(deployDir, ".deploy directory");
+  patchDeployPackage();
 
-  // ── 步骤 3: 准备部署目录 ─────────────────────────────────────────
-  // 将编译产物复制到 .deploy/，安装仅生产依赖，修改 extraResources 路径
-  logStep('Electron: prepare deploy directory');
-  if (!run('pnpm --filter bilibili-danmu-claw-electron-app run prepare-deploy')) {
-    logFail('prepare-deploy failed'); process.exit(1);
+  run(pnpmCmd, [
+    "--filter",
+    "bilibili-danmu-claw-electron-app",
+    "exec",
+    "electron-builder",
+    "--projectDir",
+    "./.deploy",
+    ...getElectronBuilderTarget(),
+  ]);
+
+  run("node", [path.join("scripts", "finalize-electron-deploy.mjs")]);
+  if (isWin) {
+    verifyPackagedRuntime();
   }
-  logOk('Deploy directory ready');
-
-  // prepare-deploy 会改写 extraResources 路径；这里再次确认核心二进制仍然存在
-  requirePythonBinaries(
-    DANMAKU_CORE,
-    requiredBins,
-    `Expected Python binaries to remain available for packaging. Checked source dir: ${DANMAKU_CORE}`
-  );
-
-  // ── 步骤 4: electron-builder 打包 ────────────────────────────────
-  // 根据当前平台自动选择目标: Windows NSIS / macOS DMG / Linux AppImage
-  logStep(`Electron: package installer (${platformLabel})`);
-  const deployDir = join(ELECTRON_APP, '.deploy');
-  requireFile(deployDir, '.deploy directory');
-
-  if (!run(`pnpm --filter bilibili-danmu-claw-electron-app exec electron-builder --projectDir ./.deploy ${target}`)) {
-    logFail('electron-builder failed'); process.exit(1);
-  }
-  logOk(`${platformLabel} installer built`);
-
-  // ── 步骤 5: 验证输出 ─────────────────────────────────────────────
-  // finalize 脚本确认安装包已输出到根目录 dist/
-  logStep('Electron: finalize output');
-  if (!run('node scripts/finalize-electron-deploy.mjs')) { logFail('finalize failed'); process.exit(1); }
-  logOk('Output finalized');
-
-  console.log(`\n${BOLD}${GREEN}Electron build complete!${RESET}`);
-  console.log(`  Installer: dist/`);
+  logOk("Electron packaging complete");
 }
 
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  主入口 — 根据命令行参数选择执行的构建步骤                          ║
-// ║                                                                    ║
-// ║  pnpm package          → buildPython() + buildElectron()            ║
-// ║  pnpm package:python   → buildPython()                              ║
-// ║  pnpm package:electron → buildElectron()                            ║
-// ║  pnpm package:clean    → clean()                                    ║
-// ╚══════════════════════════════════════════════════════════════════╝
-
-const arg = process.argv[2] || 'all';
+const arg = process.argv[2] || "all";
 
 switch (arg) {
-  case 'clean':
+  case "clean":
     clean();
     break;
-  case 'python':
+  case "python":
     buildPython();
     break;
-  case 'electron':
+  case "electron":
     buildElectron();
     break;
-  case 'all':
+  case "all":
   default:
     buildPython();
     buildElectron();
-    logStep('All done!');
-    console.log(`  ${GREEN}Python binaries:${RESET}   packages/danmaku-core/`);
-    console.log(`  ${GREEN}Installer:${RESET}         dist/  (${getPlatformLabel()})`);
+    logStep("All done");
+    console.log(`  ${GREEN}Runtime:${RESET}   ${RUNTIME_RUN_DIR}`);
+    console.log(`  ${GREEN}Installer:${RESET} dist/`);
     break;
 }

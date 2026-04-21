@@ -7,25 +7,21 @@ import os from "node:os";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const electronAppDir = path.join(repoRoot, "packages", "electron-app");
 const deployDir = path.join(electronAppDir, ".deploy");
-const danmakuCoreDir = path.join(repoRoot, "packages", "danmaku-core");
+const danmakuCoreRuntimeDir = path.join(repoRoot, "packages", "danmaku-core", "runtime");
 const stagingDir = path.join(os.tmpdir(), "danmuclaw-electron-deploy");
 const configJsonPath = path.join(electronAppDir, "out", "config.json");
-const requiredPythonBins = process.platform === "win32"
-  ? ["run.exe", "receiver.exe", "sender.exe"]
-  : ["run", "receiver", "sender"];
+const runtimeExecutablePath = process.platform === "win32"
+  ? path.join(danmakuCoreRuntimeDir, "run", "run.exe")
+  : path.join(danmakuCoreRuntimeDir, "run", "run");
 
-function assertPythonBinaries(dir, bins, label) {
-  const missing = bins.filter((bin) => !existsSync(path.join(dir, bin)));
-  if (missing.length === 0) return;
-
-  for (const bin of missing) {
-    console.error(`[prepare-deploy] Missing ${label}: ${path.join(dir, bin)}`);
-  }
-  console.error("[prepare-deploy] Build Python binaries on the target OS before packaging Electron.");
+function assertRuntimeExecutable(targetPath, label) {
+  if (existsSync(targetPath)) return;
+  console.error(`[prepare-deploy] Missing ${label}: ${targetPath}`);
+  console.error("[prepare-deploy] Build the Python runtime on the target OS before packaging Electron.");
   process.exit(1);
 }
 
-assertPythonBinaries(danmakuCoreDir, requiredPythonBins, "Python binary");
+assertRuntimeExecutable(runtimeExecutablePath, "Python runtime executable");
 
 if (existsSync(stagingDir)) {
   rmSync(stagingDir, { recursive: true, force: true });
@@ -98,11 +94,11 @@ if (existsSync(packageJsonPath)) {
       process.exit(1);
     }
     danmakuResource.from = path
-      .relative(deployDir, danmakuCoreDir)
+      .relative(deployDir, danmakuCoreRuntimeDir)
       .split(path.sep)
       .join("/");
     writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2));
   }
 }
 
-assertPythonBinaries(danmakuCoreDir, requiredPythonBins, "packaged Python binary source");
+assertRuntimeExecutable(runtimeExecutablePath, "packaged Python runtime source");

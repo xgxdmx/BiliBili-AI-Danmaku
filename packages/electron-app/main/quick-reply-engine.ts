@@ -10,9 +10,18 @@ interface MatchResult {
 }
 
 export class QuickReplyEngine {
+  private enabled = false;
   private rules: QuickReplyRule[] = [];
   private regexCache: Map<string, RegExp> = new Map();
   private lastFiredAt: Map<string, number> = new Map();
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
+  }
 
   updateRules(rules: QuickReplyRule[]): void {
     this.rules = rules.filter((r) => r.enabled);
@@ -29,7 +38,7 @@ export class QuickReplyEngine {
   }
 
   match(content: string): MatchResult | null {
-    if (!content || !this.rules.length) return null;
+    if (!this.enabled || !content || !this.rules.length) return null;
 
     const now = Date.now();
 

@@ -95,6 +95,7 @@ export interface ConfigSchema {
   room: RoomConfig;
   credentials: Credentials;
   keywords: KeywordRule[];
+  quickRepliesEnabled: boolean;
   quickReplies: QuickReplyRule[];
   openClaw: OpenClawConfig;
   aiModel: AIModelConfig;

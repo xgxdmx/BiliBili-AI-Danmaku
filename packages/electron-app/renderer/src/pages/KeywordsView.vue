@@ -39,6 +39,7 @@ const qrCaseSensitive = ref(false);
 const qrCooldown = ref(0);
 const qrSaved = ref(false);
 const qrError = ref("");
+const quickRepliesEnabled = ref(false);
 
 const captureEnabled = ref(true);
 const saved = ref(false);
@@ -64,6 +65,7 @@ onMounted(async () => {
     minMedalLevel.value = Number(config?.room?.minMedalLevel || 0);
     // 读取捕捉开关状态（默认 true）
     captureEnabled.value = config?.room?.captureEnabled !== false;
+    quickRepliesEnabled.value = config?.quickRepliesEnabled === true;
     if (Array.isArray(config?.quickReplies) && config.quickReplies.length > 0) {
       quickReplies.value = [...config.quickReplies];
     }
@@ -116,6 +118,14 @@ async function toggleCapture() {
   } catch {
     // 持久化失败时回滚 UI
     captureEnabled.value = !captureEnabled.value;
+  }
+}
+
+async function toggleQuickRepliesEnabled() {
+  try {
+    await window.danmakuAPI?.setConfig("quickRepliesEnabled", quickRepliesEnabled.value);
+  } catch {
+    quickRepliesEnabled.value = !quickRepliesEnabled.value;
   }
 }
 
@@ -357,8 +367,22 @@ async function toggleQuickReply(id: string) {
 
     <!-- 固定回复规则 -->
     <div class="card" style="margin-top: 12px;">
-      <h3 class="card-title">固定回复规则</h3>
-      <p class="card-desc">弹幕命中包含词/正则且不命中排除词时，直接发送固定回复（不走 AI）。优先级高于 AI 自动回复。</p>
+      <div class="page-header" style="margin-bottom: 8px;">
+        <div>
+          <h3 class="card-title">固定回复规则</h3>
+          <p class="card-desc">弹幕命中包含词/正则且不命中排除词时，直接发送固定回复（不走 AI）。优先级高于 AI 自动回复。</p>
+        </div>
+        <label class="switch-row">
+          <span class="switch-label">全局开关</span>
+          <input v-model="quickRepliesEnabled" type="checkbox" class="switch-input" @change="toggleQuickRepliesEnabled" />
+          <span class="switch-track" :class="{ on: quickRepliesEnabled }">
+            <span class="switch-thumb"></span>
+          </span>
+          <span class="switch-state" :class="quickRepliesEnabled ? 'on' : 'off'">
+            {{ quickRepliesEnabled ? "已开启" : "默认关闭" }}
+          </span>
+        </label>
+      </div>
 
       <div class="field">
         <label class="field-label">包含词（任一命中即触发，逗号或换行分隔）</label>

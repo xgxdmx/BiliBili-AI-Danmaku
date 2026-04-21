@@ -17,6 +17,7 @@ interface ConfigDisplay {
   room: { roomId: number; enabled: boolean; minMedalLevel: number };
   credentials: { sessdata: string; biliJct: string; buvid3: string };
   keywords: Array<{ id: string; pattern: string; type: string; enabled: boolean; caseSensitive: boolean; scope: string }>;
+  quickRepliesEnabled: boolean;
   quickReplies: Array<{ id: string; enabled: boolean; contains: string[]; notContains: string[]; regex: string; reply: string; caseSensitive: boolean; cooldownMs: number }>;
   aiModel: {
     provider: string;
@@ -31,6 +32,7 @@ const config = reactive<ConfigDisplay>({
   room: { roomId: 0, enabled: true, minMedalLevel: 0 },
   credentials: { sessdata: "", biliJct: "", buvid3: "" },
   keywords: [],
+  quickRepliesEnabled: false,
   quickReplies: [],
   aiModel: {
     provider: "",
@@ -54,6 +56,7 @@ onMounted(async () => {
       config.room = data.room || config.room;
       config.credentials = data.credentials || config.credentials;
       config.keywords = Array.isArray(data.keywords) ? data.keywords : [];
+      config.quickRepliesEnabled = data.quickRepliesEnabled === true;
       config.quickReplies = Array.isArray(data.quickReplies) ? data.quickReplies : [];
       if (data.aiModel) {
         config.aiModel = {
@@ -122,6 +125,8 @@ async function handleImport() {
         config.room = data.room;
         config.credentials = data.credentials;
         config.keywords = data.keywords;
+        config.quickRepliesEnabled = data.quickRepliesEnabled === true;
+        config.quickReplies = data.quickReplies;
         config.aiModel = data.aiModel;
       }
     } catch (e) {

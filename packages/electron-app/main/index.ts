@@ -180,8 +180,17 @@ function registerIpcHandlers(): void {
   const disconnectAIWhenDanmakuStops = (): void => {
     if (!aiRelay) return;
     if (!aiRelay.getStatus().connected) return;
+    logger.log("Disconnecting AI because danmaku listener is offline");
     aiRelay.disconnect();
     latestAIStatus = aiRelay.getStatus();
+  };
+
+  /** 将固定回复运行时状态与当前配置同步 */
+  const syncQuickReplyEngineFromConfig = (): void => {
+    if (!quickReplyEngine) return;
+    const config = getConfig();
+    quickReplyEngine.setEnabled(config.quickRepliesEnabled === true);
+    quickReplyEngine.updateRules(config.quickReplies || []);
   };
 
   // ─── 初始化子模块 ─────────────────────────────────────────
@@ -203,10 +212,7 @@ function registerIpcHandlers(): void {
   /** 固定回复引擎：关键词命中后直接发送预设文本 */
   if (!quickReplyEngine) {
     quickReplyEngine = new QuickReplyEngine();
-    const initialConfig = getConfig();
-    if (initialConfig.quickReplies) {
-      quickReplyEngine.updateRules(initialConfig.quickReplies);
-    }
+    syncQuickReplyEngineFromConfig();
   }
 
   // ─── 弹幕服务 IPC ─────────────────────────────────────────
@@ -360,9 +366,7 @@ danmakuService.on("danmaku", (data) => {
   /** 更新固定回复规则列表 */
   ipcMain.handle("quickReplies:update", async (_event, rules) => {
     setConfigPath("quickReplies", rules);
-    if (quickReplyEngine) {
-      quickReplyEngine.updateRules(rules);
-    }
+    syncQuickReplyEngineFromConfig();
     return { status: "ok" };
   });
 
@@ -374,9 +378,7 @@ danmakuService.on("danmaku", (data) => {
       danmakuService.updateKeywords(getConfig().keywords);
       danmakuService.updateMinMedalLevel(getConfig().room?.minMedalLevel || 0);
     }
-    if (quickReplyEngine) {
-      quickReplyEngine.updateRules(getConfig().quickReplies || []);
-    }
+    syncQuickReplyEngineFromConfig();
   };
 
   /** 读取完整配置 */
@@ -388,6 +390,9 @@ danmakuService.on("danmaku", (data) => {
   ipcMain.handle("config:set", async (_event, key: string, value: unknown) => {
     try {
       setConfigPath(key, value);
+      if (key === "quickRepliesEnabled" || key === "quickReplies") {
+        syncQuickReplyEngineFromConfig();
+      }
       return { status: "ok" };
     } catch (e: unknown) {
       return { status: "error", message: String(e) };

@@ -49,6 +49,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": null,
+      "include": "build/installer.nsh",
       "shortcutName": "bilibili-danmu-claw"
     },
     "files": [
@@ -56,9 +57,9 @@
     ],
     "extraResources": [
       {
-        "from": "../danmaku-core",
+        "from": "../danmaku-core/runtime",
         "to": "danmaku-core",
-        "filter": ["**/*", "!build/**", "!dist/**", "!*.spec", "!__pycache__/**", "!*.py", "!requirements.txt"]
+        "filter": ["**/*"]
       },
       {
         "from": "resources",

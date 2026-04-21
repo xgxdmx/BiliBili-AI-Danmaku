@@ -109,6 +109,8 @@ export interface ConfigSchema {
   room: RoomConfig;
   credentials: Credentials;
   keywords: KeywordRule[];
+  /** 固定回复全局开关。关闭后规则保留但不会触发发送 */
+  quickRepliesEnabled: boolean;
   quickReplies: QuickReplyRule[];
   aiModel: AIModelConfig;
   /** 主题模式：light / dark / system */
@@ -133,6 +135,7 @@ const schema: ConfigSchema = {
     buvid3: "",
   },
   keywords: [],
+  quickRepliesEnabled: false,
   quickReplies: [],
   aiModel: {
     provider: "opencode",
@@ -255,6 +258,7 @@ function initializeStore(): Store<ConfigSchema> {
     migratedStore.set("room", snap.room || schema.room);
     migratedStore.set("credentials", snap.credentials || schema.credentials);
     migratedStore.set("keywords", snap.keywords || schema.keywords);
+    migratedStore.set("quickRepliesEnabled", snap.quickRepliesEnabled ?? schema.quickRepliesEnabled);
     migratedStore.set("quickReplies", snap.quickReplies || schema.quickReplies);
     migratedStore.set("aiModel", snap.aiModel || schema.aiModel);
 
@@ -275,6 +279,7 @@ export function getConfig(): ConfigSchema {
     room: store.get("room", schema.room),
     credentials: store.get("credentials", schema.credentials),
     keywords: store.get("keywords", schema.keywords),
+    quickRepliesEnabled: store.get("quickRepliesEnabled", schema.quickRepliesEnabled),
     quickReplies: store.get("quickReplies", schema.quickReplies),
     aiModel: store.get("aiModel", schema.aiModel),
     theme: store.get("theme", schema.theme),
@@ -449,6 +454,7 @@ export function exportConfigToFile(
       room: config.room,
       credentials: exportedCredentials,
       keywords: config.keywords,
+      quickRepliesEnabled: config.quickRepliesEnabled ?? schema.quickRepliesEnabled,
       quickReplies: config.quickReplies,
       aiModel: {
         provider: ai.provider,
@@ -497,6 +503,7 @@ export function importConfigFromContent(content: string): { status: string; erro
     if (config.room) store.set("room", config.room);
     if (config.credentials) store.set("credentials", config.credentials);
     if (config.keywords) store.set("keywords", config.keywords);
+    store.set("quickRepliesEnabled", config.quickRepliesEnabled ?? schema.quickRepliesEnabled);
     if (config.quickReplies) store.set("quickReplies", config.quickReplies);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- aiModel may not exist on older configs
     if ((config as any).aiModel) store.set("aiModel", (config as any).aiModel);

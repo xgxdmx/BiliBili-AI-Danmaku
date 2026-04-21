@@ -4,7 +4,7 @@
 // ============================================================
 
 import { EventEmitter } from "events";
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { join } from "path";
 import * as fs from "fs";
@@ -147,6 +147,8 @@ export class DanmakuService extends EventEmitter {
     const packagedBasePath = process.resourcesPath ? join(process.resourcesPath, "danmaku-core") : "";
     const candidates = [
       scriptPath,
+      packagedBasePath ? join(packagedBasePath, "run", "run.exe") : "",
+      packagedBasePath ? join(packagedBasePath, "run", "run") : "",
       packagedBasePath ? join(packagedBasePath, "run.exe") : "",
       packagedBasePath ? join(packagedBasePath, "run") : "",
       packagedBasePath ? join(packagedBasePath, "run.py") : "",
@@ -217,14 +219,20 @@ export class DanmakuService extends EventEmitter {
 
     const exePath = join(basePath, "run.exe");
     const binPath = join(basePath, "run");
+    const runtimeExePath = join(basePath, "run", "run.exe");
+    const runtimeBinPath = join(basePath, "run", "run");
     const pyPath = join(basePath, "run.py");
 
     if (!isDevMode) {
+      if (isWin && fs.existsSync(runtimeExePath)) return { scriptPath: runtimeExePath, usePython: false, pythonPath };
+      if (!isWin && fs.existsSync(runtimeBinPath)) return { scriptPath: runtimeBinPath, usePython: false, pythonPath };
       if (isWin && fs.existsSync(exePath)) return { scriptPath: exePath, usePython: false, pythonPath };
       if (!isWin && fs.existsSync(binPath)) return { scriptPath: binPath, usePython: false, pythonPath };
       if (fs.existsSync(pyPath)) return { scriptPath: pyPath, usePython: true, pythonPath };
       logger.error("DanmakuService resolveScriptPaths failed", {
         basePath,
+        runtimeExePath,
+        runtimeBinPath,
         exePath,
         binPath,
         pyPath,
@@ -320,6 +328,9 @@ export class DanmakuService extends EventEmitter {
       return;
     }
 
+    const procPid = proc.pid ?? null;
+    logger.log("Stopping danmaku service", { pid: procPid });
+
     try {
       await this.request("stop", {});
     } catch {
@@ -330,15 +341,21 @@ export class DanmakuService extends EventEmitter {
     proc.stdin?.end();
     
     // 等待进程退出
-    await this.waitForProcessExit(proc, 2000);
+    const exitedGracefully = await this.waitForProcessExit(proc, 2000);
     
     if (proc.exitCode === null) {
+      logger.warn("Danmaku service did not exit in time, forcing shutdown", { pid: procPid });
       this.forceKill(proc);
       await this.waitForProcessExit(proc, 2000);
     }
-    
+
+    if (!exitedGracefully && proc.exitCode === null) {
+      logger.error("Danmaku service process still alive after force kill", { pid: procPid });
+    }
+
     this.process = null;
-    this.pendingRequests.clear();
+    this.rejectPendingRequests(new Error("Danmaku service stopped"));
+    logger.log("Danmaku service stopped", { pid: procPid, exitCode: proc.exitCode });
   }
 
   updateKeywords(keywords: KeywordRule[]): void {
@@ -505,6 +522,14 @@ this._connected = true;
     });
   }
 
+  private rejectPendingRequests(error: Error): void {
+    for (const [id, pending] of this.pendingRequests.entries()) {
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+      this.pendingRequests.delete(id);
+    }
+  }
+
   /**
    * 强制终止子进程。
    * Windows：先 process.kill(pid) 再 proc.kill(SIGKILL)
@@ -515,6 +540,27 @@ this._connected = true;
     if (process.platform === "win32") {
       const pid = proc.pid;
       if (pid) {
+        try {
+          const result = spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+            stdio: "ignore",
+            windowsHide: true,
+          });
+          if (result.status === 0) {
+            logger.warn("Killed danmaku service process tree", { pid });
+            return;
+          }
+          logger.warn("taskkill did not fully terminate danmaku service", {
+            pid,
+            status: result.status,
+            signal: result.signal,
+          });
+        } catch (error) {
+          logger.warn("taskkill failed for danmaku service", {
+            pid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
         try {
           process.kill(pid);
         } catch {
