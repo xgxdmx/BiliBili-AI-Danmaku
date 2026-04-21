@@ -123,6 +123,22 @@ function getPlatformLabel() {
   return "Linux";
 }
 
+function getElectronBuilderCli() {
+  const candidates = [
+    path.join(ROOT, "node_modules", ".pnpm", "node_modules", "electron-builder", "cli.js"),
+    path.join(ROOT, "node_modules", "electron-builder", "cli.js"),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  logFail("electron-builder CLI not found in node_modules");
+  process.exit(1);
+}
+
 function clean() {
   logStep("Clean build artifacts");
 
@@ -307,15 +323,12 @@ function buildElectron() {
   requirePath(deployDir, ".deploy directory");
   patchDeployPackage();
 
-  run(pnpmCmd, [
-    "--filter",
-    "bilibili-danmu-claw-electron-app",
-    "exec",
-    "electron-builder",
+  run("node", [
+    getElectronBuilderCli(),
     "--projectDir",
     "./.deploy",
     ...getElectronBuilderTarget(),
-  ]);
+  ], { cwd: ELECTRON_APP });
 
   run("node", [path.join("scripts", "finalize-electron-deploy.mjs")]);
   if (isWin) {
