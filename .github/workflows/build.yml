@@ -48,6 +48,8 @@ jobs:
 
       - name: Build package
         run: pnpm package
+        env:
+          DEBUG: electron-builder,builder-util
 
       - name: Verify Python binaries were produced
         shell: bash
@@ -94,7 +96,7 @@ jobs:
 
           Start-Process -FilePath $installer.FullName -ArgumentList "/S","/D=$installDir" -Wait
 
-          $appExe = Join-Path $installDir "BiliBili弹幕Claw.exe"
+          $appExe = Join-Path $installDir "bilibili-danmu-claw.exe"
           $runtimeExe = Join-Path $installDir "resources\danmaku-core\run\run.exe"
 
           if (!(Test-Path $appExe)) {

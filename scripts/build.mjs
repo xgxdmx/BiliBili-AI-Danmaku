@@ -1,6 +1,22 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
+/**
+ * Unified packaging entry for CI and local release builds.
+ *
+ * High-level pipeline:
+ * 1) Build Python runtime via PyInstaller (onedir).
+ * 2) Stage runtime under packages/danmaku-core/runtime/run.
+ * 3) Build Electron app and prepare .deploy project.
+ * 4) Patch deploy-time NSIS options for Windows.
+ * 5) Package with electron-builder.
+ * 6) Verify packaged runtime is present and runnable.
+ *
+ * Why this script exists:
+ * - Keep release steps deterministic across local and GitHub Actions.
+ * - Fail fast on missing runtime artifacts.
+ * - Emit actionable logs when packaging fails on Windows runners.
+ */
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +44,15 @@ function logOk(msg) { console.log(`  ${GREEN}✔${RESET} ${msg}`); }
 function logInfo(msg) { console.log(`  ${YELLOW}→${RESET} ${msg}`); }
 function logFail(msg) { console.error(`  ${RED}✖${RESET} ${msg}`); }
 
+/**
+ * Run a command with robust cross-platform behavior and full diagnostics.
+ *
+ * Important behaviors:
+ * - On Windows, ".cmd" commands are routed through "cmd.exe /d /s /c".
+ * - stdout/stderr are always captured then replayed, so CI logs are preserved.
+ * - Non-zero exit codes throw explicit errors with command context.
+ * - windowsHide=true avoids transient console windows during packaging.
+ */
 function run(cmd, args, options = {}) {
   const cwd = options.cwd || ROOT;
   logInfo([cmd, ...args].join(" "));
@@ -39,14 +64,35 @@ function run(cmd, args, options = {}) {
     ? ["/d", "/s", "/c", cmd, ...args]
     : args;
 
-  execFileSync(actualCmd, actualArgs, {
+  const result = spawnSync(actualCmd, actualArgs, {
     cwd,
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
     env: { ...process.env, ...options.env },
     windowsHide: true,
+    maxBuffer: 1024 * 1024 * 64,
   });
+
+  if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+  if (result.stderr) {
+    process.stderr.write(result.stderr);
+  }
+
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    const code = result.status ?? 1;
+    throw new Error(`Command failed with exit code ${code}: ${[cmd, ...args].join(" ")}`);
+  }
 }
 
+/**
+ * Best-effort command probe.
+ * Used for interpreter discovery and optional checks where failure is expected.
+ */
 function tryRun(cmd, args, options = {}) {
   try {
     run(cmd, args, options);
@@ -81,6 +127,10 @@ function writeJson(filePath, value) {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+/**
+ * Return pnpm executable command name for current platform.
+ * Note: actual ".cmd" execution details are handled in run().
+ */
 function getPnpmCmd() {
   return isWin ? "pnpm.cmd" : "pnpm";
 }
@@ -91,6 +141,11 @@ function getVenvPython() {
     : path.join(ROOT, ".venv", "bin", "python");
 }
 
+/**
+ * Resolve python interpreter in this order:
+ * 1) project virtualenv
+ * 2) system python commands
+ */
 function getPythonExe() {
   const venvPython = getVenvPython();
   if (existsSync(venvPython)) return venvPython;
@@ -113,6 +168,10 @@ function pipPackageExists(python, pkg) {
   }
 }
 
+/**
+ * Compute packaging target args for electron-builder.
+ * Current workflow is Windows-focused; non-Windows defaults to Linux AppImage.
+ */
 function getElectronBuilderTarget() {
   if (isWin) return ["--win", "nsis"];
   return ["--linux", "AppImage"];
@@ -123,6 +182,11 @@ function getPlatformLabel() {
   return "Linux";
 }
 
+/**
+ * Resolve local electron-builder CLI path from node_modules.
+ * We invoke it directly to avoid recursive pnpm exec wrappers
+ * hiding important failure output in CI.
+ */
 function getElectronBuilderCli() {
   const candidates = [
     path.join(ROOT, "node_modules", ".pnpm", "node_modules", "electron-builder", "cli.js"),
@@ -139,6 +203,10 @@ function getElectronBuilderCli() {
   process.exit(1);
 }
 
+/**
+ * Remove build outputs and stale runtime artifacts.
+ * Safe to call repeatedly.
+ */
 function clean() {
   logStep("Clean build artifacts");
 
@@ -163,6 +231,10 @@ function clean() {
   logOk("Clean done");
 }
 
+/**
+ * Ensure required Python dependencies exist.
+ * Installs only missing packages to reduce CI variance.
+ */
 function installPythonDeps(python) {
   logStep("Python: check dependencies");
 
@@ -181,6 +253,10 @@ function installPythonDeps(python) {
   logOk(`Installed Python dependencies: ${missing.join(", ")}`);
 }
 
+/**
+ * Build Python runtime as PyInstaller onedir output, then stage it
+ * under packages/danmaku-core/runtime/run for electron extraResources.
+ */
 function buildPython() {
   logStep("Python: find interpreter");
   const python = getPythonExe();
@@ -231,12 +307,21 @@ function buildPython() {
   logOk(`Staged runtime: ${RUNTIME_RUN_DIR}`);
 }
 
+/**
+ * Guard that staged runtime exists before electron packaging starts.
+ */
 function verifyRuntimeStaged() {
   const runtimeExe = path.join(RUNTIME_RUN_DIR, isWin ? "run.exe" : "run");
   requirePath(RUNTIME_RUN_DIR, "Runtime directory");
   requirePath(runtimeExe, "Runtime executable");
 }
 
+/**
+ * Runtime smoke test:
+ * - Executes runtime binary with no args.
+ * - Treats known "usage" style exits as acceptable for probe runs.
+ * - Fails hard for launch/runtime loader issues (DLL/import errors, etc.).
+ */
 function smokeTestRuntime(runtimeExe, label) {
   logStep(`Runtime smoke test: ${label}`);
   requirePath(runtimeExe, label);
@@ -273,6 +358,10 @@ function smokeTestRuntime(runtimeExe, label) {
   }
 }
 
+/**
+ * Patch generated .deploy package.json for Windows installer behavior.
+ * Applied at deploy time so source package.json remains minimal.
+ */
 function patchDeployPackage() {
   const deployPkgPath = path.join(ELECTRON_APP, ".deploy", "package.json");
   requirePath(deployPkgPath, ".deploy/package.json");
@@ -295,6 +384,10 @@ function patchDeployPackage() {
   }
 }
 
+/**
+ * Verify runtime embedded in packaged app output.
+ * Currently implemented for Windows, where regressions were observed.
+ */
 function verifyPackagedRuntime() {
   logStep(`Electron: verify packaged runtime (${getPlatformLabel()})`);
 
@@ -308,6 +401,15 @@ function verifyPackagedRuntime() {
   logInfo("Packaged runtime verification is only implemented for Windows in this script");
 }
 
+/**
+ * Electron packaging phase:
+ * - install deps
+ * - build renderer/main
+ * - prepare deploy folder
+ * - run electron-builder
+ * - finalize artifacts
+ * - run post-package runtime checks on Windows
+ */
 function buildElectron() {
   logStep(`Electron: prepare package (${getPlatformLabel()})`);
   verifyRuntimeStaged();
@@ -328,7 +430,12 @@ function buildElectron() {
     "--projectDir",
     "./.deploy",
     ...getElectronBuilderTarget(),
-  ], { cwd: ELECTRON_APP });
+  ], {
+    cwd: ELECTRON_APP,
+    env: {
+      DEBUG: process.env.DEBUG || "electron-builder,builder-util",
+    },
+  });
 
   run("node", [path.join("scripts", "finalize-electron-deploy.mjs")]);
   if (isWin) {
@@ -337,6 +444,13 @@ function buildElectron() {
   logOk("Electron packaging complete");
 }
 
+/**
+ * CLI entry:
+ * - clean
+ * - python
+ * - electron
+ * - all (default)
+ */
 const arg = process.argv[2] || "all";
 
 switch (arg) {

@@ -23,6 +23,7 @@
       "output": "../../../dist"
     },
     "win": {
+      "executableName": "bilibili-danmu-claw",
       "target": [
         {
           "target": "nsis",
