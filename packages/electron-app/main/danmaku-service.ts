@@ -6,7 +6,7 @@
 import { EventEmitter } from "events";
 import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
-import { join, dirname } from "path";
+import { join } from "path";
 import * as fs from "fs";
 import { logger } from "./logger";
 
@@ -143,6 +143,35 @@ export class DanmakuService extends EventEmitter {
   private buffer = "";
   private _connected = false;
 
+  private logBinaryDiagnostics(scriptPath: string, usePython: boolean, pythonPath: string): void {
+    const packagedBasePath = process.resourcesPath ? join(process.resourcesPath, "danmaku-core") : "";
+    const candidates = [
+      scriptPath,
+      packagedBasePath ? join(packagedBasePath, "run.exe") : "",
+      packagedBasePath ? join(packagedBasePath, "run") : "",
+      packagedBasePath ? join(packagedBasePath, "run.py") : "",
+    ].filter(Boolean);
+
+    const snapshot = candidates.map((candidate) => {
+      const exists = fs.existsSync(candidate);
+      return {
+        path: candidate,
+        exists,
+        size: exists ? fs.statSync(candidate).size : null,
+      };
+    });
+
+    logger.log("DanmakuService binary diagnostics", {
+      isPackaged: !logger.isDev,
+      processResourcesPath: process.resourcesPath,
+      usePython,
+      pythonPath,
+      selectedScript: scriptPath,
+      candidates: snapshot,
+      logFilePath: logger.filePath,
+    });
+  }
+
   /**
    * 启动弹幕服务。
    * 流程：解析脚本路径 → 创建子进程 → 绑定事件 → 等待连接就绪 → 发送 start 请求。
@@ -153,6 +182,7 @@ export class DanmakuService extends EventEmitter {
     logger.log("DanmakuService.start, roomId:", config.roomId);
 
     const { scriptPath, usePython, pythonPath } = this.resolveScriptPaths();
+    this.logBinaryDiagnostics(scriptPath, usePython, pythonPath);
     logger.log("Spawning:", usePython ? pythonPath : scriptPath, "script:", scriptPath);
     this.process = this.spawnProcess(scriptPath, usePython, pythonPath);
     this.bindProcessEvents(this.process);
@@ -193,6 +223,14 @@ export class DanmakuService extends EventEmitter {
       if (isWin && fs.existsSync(exePath)) return { scriptPath: exePath, usePython: false, pythonPath };
       if (!isWin && fs.existsSync(binPath)) return { scriptPath: binPath, usePython: false, pythonPath };
       if (fs.existsSync(pyPath)) return { scriptPath: pyPath, usePython: true, pythonPath };
+      logger.error("DanmakuService resolveScriptPaths failed", {
+        basePath,
+        exePath,
+        binPath,
+        pyPath,
+        resourcesPath: process.resourcesPath,
+        appPath: require("electron").app.getAppPath(),
+      });
       throw new Error("未找到 danmaku-core 脚本");
     }
     return { scriptPath: pyPath, usePython: true, pythonPath };
@@ -200,6 +238,11 @@ export class DanmakuService extends EventEmitter {
 
   /** 根据平台和脚本类型创建子进程 */
   private spawnProcess(scriptPath: string, usePython: boolean, pythonPath: string): ChildProcess {
+    if (!fs.existsSync(scriptPath)) {
+      logger.error("DanmakuService spawn target does not exist", { scriptPath, usePython, pythonPath });
+      throw new Error(`Danmaku core binary not found: ${scriptPath}`);
+    }
+
     if (process.platform === "win32") {
       if (usePython) {
         return spawn(pythonPath, ["-X", "utf8", scriptPath, "receiver"], {
@@ -234,20 +277,27 @@ export class DanmakuService extends EventEmitter {
         if (text.trim()) {
           stderrData += text;
           for (const line of text.trim().split("\n")) {
-            if (line.trim()) logger.log("[Python]", line.trim());
+            if (line.trim()) logger.warn("[Python]", line.trim());
           }
         }
       } catch {}
     });
     proc.on("close", (code) => {
-      logger.log("Python process closed, code:", code);
+      logger.warn("Python process closed", { code, stderrPreview: stderrData.substring(0, 500) });
       this._connected = false;
       if (code !== 0 && stderrData) {
         this.emit("error", { error: `Python 进程异常退出 (${code}): ${stderrData.substring(0, 500)}` });
       }
       this.emit("disconnected", { code });
     });
-    proc.on("error", (err) => { this.emit("error", { error: err.message }); });
+    proc.on("error", (err) => {
+      logger.error("Python process spawn error", {
+        message: err.message,
+        name: err.name,
+        stack: err.stack,
+      });
+      this.emit("error", { error: err.message });
+    });
   }
 
   /** 等待 Python 进程上报连接就绪，最多 3 秒 */

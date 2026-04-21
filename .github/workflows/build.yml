@@ -66,6 +66,33 @@ jobs:
             test -f packages/danmaku-core/sender
           fi
 
+      - name: Verify packaged app contains danmaku-core binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $base = Join-Path $PWD "dist\win-unpacked\resources\danmaku-core"
+          if (!(Test-Path $base)) {
+            Write-Error "Packaged danmaku-core directory missing: $base"
+          }
+          @("run.exe", "receiver.exe", "sender.exe") | ForEach-Object {
+            $target = Join-Path $base $_
+            if (!(Test-Path $target)) {
+              Write-Error "Missing packaged binary: $target"
+            }
+          }
+
+      - name: Verify packaged app contains danmaku-core binaries (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_dir=$(find dist -maxdepth 2 -type d -name "*.app" | head -n 1)
+          test -n "$app_dir"
+          base="$app_dir/Contents/Resources/danmaku-core"
+          test -d "$base"
+          test -f "$base/run"
+          test -f "$base/receiver"
+          test -f "$base/sender"
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:

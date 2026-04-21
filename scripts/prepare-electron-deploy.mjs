@@ -92,7 +92,12 @@ if (existsSync(packageJsonPath)) {
   const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
   const extraResources = pkg?.build?.extraResources;
   if (Array.isArray(extraResources) && extraResources.length > 0) {
-    extraResources[0].from = path
+    const danmakuResource = extraResources.find((entry) => entry?.to === "danmaku-core");
+    if (!danmakuResource) {
+      console.error("[prepare-deploy] Missing extraResources entry with to=danmaku-core");
+      process.exit(1);
+    }
+    danmakuResource.from = path
       .relative(deployDir, danmakuCoreDir)
       .split(path.sep)
       .join("/");

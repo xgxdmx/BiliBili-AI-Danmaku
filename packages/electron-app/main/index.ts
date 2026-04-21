@@ -106,7 +106,7 @@ function createWindow(): void {
 
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, "resources", "icon.ico")
-    : join(__dirname, "../../build/icon.ico");
+    : join(__dirname, "../../resources/icon.ico");
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,

@@ -31,7 +31,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
+      "icon": "resources/icon.ico",
       "signAndEditExecutable": false
     },
     "mac": {
@@ -39,7 +39,7 @@
         "dmg",
         "zip"
       ],
-      "icon": "build/icon.svg",
+      "icon": "resources/icon.ico",
       "category": "public.app-category.utilities"
     },
     "portable": {
@@ -61,7 +61,7 @@
         "filter": ["**/*", "!build/**", "!dist/**", "!*.spec", "!__pycache__/**", "!*.py", "!requirements.txt"]
       },
       {
-        "from": "build",
+        "from": "resources",
         "to": "resources",
         "filter": ["**/*"]
       }
