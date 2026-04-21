@@ -1,0 +1,74 @@
+name: Build Release Artifacts
+
+on:
+  push:
+    branches:
+      - main
+      - test
+      - alpha
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: windows-dist
+            python_version: "3.13"
+            node_version: "24"
+          - os: macos-latest
+            artifact_name: macos-dist
+            python_version: "3.13"
+            node_version: "24"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node_version }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@10 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package
+        run: pnpm package
+
+      - name: Verify Python binaries were produced
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f packages/danmaku-core/run.exe
+            test -f packages/danmaku-core/receiver.exe
+            test -f packages/danmaku-core/sender.exe
+          else
+            test -f packages/danmaku-core/run
+            test -f packages/danmaku-core/receiver
+            test -f packages/danmaku-core/sender
+          fi
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/*
+          if-no-files-found: error

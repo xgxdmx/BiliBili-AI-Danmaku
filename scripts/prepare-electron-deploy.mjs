@@ -10,6 +10,22 @@ const deployDir = path.join(electronAppDir, ".deploy");
 const danmakuCoreDir = path.join(repoRoot, "packages", "danmaku-core");
 const stagingDir = path.join(os.tmpdir(), "danmuclaw-electron-deploy");
 const configJsonPath = path.join(electronAppDir, "out", "config.json");
+const requiredPythonBins = process.platform === "win32"
+  ? ["run.exe", "receiver.exe", "sender.exe"]
+  : ["run", "receiver", "sender"];
+
+function assertPythonBinaries(dir, bins, label) {
+  const missing = bins.filter((bin) => !existsSync(path.join(dir, bin)));
+  if (missing.length === 0) return;
+
+  for (const bin of missing) {
+    console.error(`[prepare-deploy] Missing ${label}: ${path.join(dir, bin)}`);
+  }
+  console.error("[prepare-deploy] Build Python binaries on the target OS before packaging Electron.");
+  process.exit(1);
+}
+
+assertPythonBinaries(danmakuCoreDir, requiredPythonBins, "Python binary");
 
 if (existsSync(stagingDir)) {
   rmSync(stagingDir, { recursive: true, force: true });
@@ -83,3 +99,5 @@ if (existsSync(packageJsonPath)) {
     writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2));
   }
 }
+
+assertPythonBinaries(danmakuCoreDir, requiredPythonBins, "packaged Python binary source");

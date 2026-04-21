@@ -136,6 +136,23 @@ function requireFile(filepath, label) {
 }
 
 /**
+ * 检查 Python 核心二进制是否已就位
+ * @param {string} dir - 目标目录
+ * @param {string[]} bins - 必需文件列表
+ * @param {string} hint - 缺失时附加提示
+ */
+function requirePythonBinaries(dir, bins, hint = '') {
+  const missing = bins.filter((bin) => !existsSync(join(dir, bin)));
+  if (missing.length === 0) return;
+
+  for (const bin of missing) {
+    logFail(`Python binary not found: ${join(dir, bin)}`);
+  }
+  if (hint) logFail(hint);
+  process.exit(1);
+}
+
+/**
  * 用 pip show 检查 Python 包是否已安装
  * 避免重复安装（尤其解决 aiohttp 在 Python 3.13 上源码编译失败的问题）
  * @param {string} python - Python 路径
@@ -334,19 +351,16 @@ function buildPython() {
 function buildElectron() {
   const target = getElectronBuilderTarget();     // e.g. "--win nsis"
   const platformLabel = getPlatformLabel();       // e.g. "Windows (NSIS)"
+  const requiredBins = ['run', 'receiver', 'sender'].map(n => n + PY_BIN_EXT);
 
   // ── 步骤 0: 检查 Python 产物是否存在 ─────────────────────────────
   // electron-builder 会将 danmaku-core/ 目录整体打入安装包，
   // 如果没有可执行文件则会打包一个不能运行的应用
-  const requiredBins = ['run', 'receiver', 'sender'].map(n => n + PY_BIN_EXT);
-  for (const bin of requiredBins) {
-    const filepath = join(DANMAKU_CORE, bin);
-    if (!existsSync(filepath)) {
-      logFail(`Python binary not found: ${filepath}`);
-      logFail('Run "pnpm package:python" first');
-      process.exit(1);
-    }
-  }
+  requirePythonBinaries(
+    DANMAKU_CORE,
+    requiredBins,
+    'Run "pnpm package:python" first, or make sure CI builds on the target OS before packaging Electron.'
+  );
 
   // ── 步骤 1: 安装 Node 依赖 ────────────────────────────────────────
   logStep('Electron: install Node dependencies');
@@ -366,6 +380,13 @@ function buildElectron() {
     logFail('prepare-deploy failed'); process.exit(1);
   }
   logOk('Deploy directory ready');
+
+  // prepare-deploy 会改写 extraResources 路径；这里再次确认核心二进制仍然存在
+  requirePythonBinaries(
+    DANMAKU_CORE,
+    requiredBins,
+    `Expected Python binaries to remain available for packaging. Checked source dir: ${DANMAKU_CORE}`
+  );
 
   // ── 步骤 4: electron-builder 打包 ────────────────────────────────
   // 根据当前平台自动选择目标: Windows NSIS / macOS DMG / Linux AppImage
