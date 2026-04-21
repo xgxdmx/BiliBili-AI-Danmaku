@@ -6,7 +6,7 @@
 import { EventEmitter } from "events";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
-import { join } from "path";
+import { join, dirname } from "path";
 import * as fs from "fs";
 import { logger } from "./logger";
 
@@ -133,6 +133,8 @@ interface DanmakuServiceConfig {
 
 export class DanmakuService extends EventEmitter {
   private process: ChildProcess | null = null;
+  /** 记录当前采用可执行文件模式时的 run.exe 绝对路径（仅 Windows 打包态使用） */
+  private launchedRunExePath: string | null = null;
   private keywordFilter = new KeywordFilter();
   private config: DanmakuServiceConfig | null = null;
   private pendingRequests: Map<string, {
@@ -142,36 +144,20 @@ export class DanmakuService extends EventEmitter {
   }> = new Map();
   private buffer = "";
   private _connected = false;
+  /** 生命周期串行队列：确保 start/stop 不会并发互相覆盖进程引用 */
+  private lifecycleQueue: Promise<void> = Promise.resolve();
 
-  private logBinaryDiagnostics(scriptPath: string, usePython: boolean, pythonPath: string): void {
-    const packagedBasePath = process.resourcesPath ? join(process.resourcesPath, "danmaku-core") : "";
-    const candidates = [
-      scriptPath,
-      packagedBasePath ? join(packagedBasePath, "run", "run.exe") : "",
-      packagedBasePath ? join(packagedBasePath, "run", "run") : "",
-      packagedBasePath ? join(packagedBasePath, "run.exe") : "",
-      packagedBasePath ? join(packagedBasePath, "run") : "",
-      packagedBasePath ? join(packagedBasePath, "run.py") : "",
-    ].filter(Boolean);
+  /** 将生命周期操作串行化，避免重复 spawn 导致孤儿进程 */
+  private enqueueLifecycle<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.lifecycleQueue.then(op, op);
+    this.lifecycleQueue = run.then(() => undefined, () => undefined);
+    return run;
+  }
 
-    const snapshot = candidates.map((candidate) => {
-      const exists = fs.existsSync(candidate);
-      return {
-        path: candidate,
-        exists,
-        size: exists ? fs.statSync(candidate).size : null,
-      };
-    });
-
-    logger.log("DanmakuService binary diagnostics", {
-      isPackaged: !logger.isDev,
-      processResourcesPath: process.resourcesPath,
-      usePython,
-      pythonPath,
-      selectedScript: scriptPath,
-      candidates: snapshot,
-      logFilePath: logger.filePath,
-    });
+  /** 判断子进程是否仍在运行 */
+  private isProcessAlive(proc: ChildProcess | null): boolean {
+    if (!proc) return false;
+    return proc.exitCode === null && !proc.killed;
   }
 
   /**
@@ -179,22 +165,42 @@ export class DanmakuService extends EventEmitter {
    * 流程：解析脚本路径 → 创建子进程 → 绑定事件 → 等待连接就绪 → 发送 start 请求。
    */
   async start(config: DanmakuServiceConfig): Promise<void> {
-    this.config = config;
-    this.keywordFilter.updateRules(config.keywords, config.minMedalLevel ?? 0);
-    logger.log("DanmakuService.start, roomId:", config.roomId);
+    return this.enqueueLifecycle(async () => {
+      // 若已有活跃子进程，先完整停止，避免 run.exe 叠加
+      if (this.isProcessAlive(this.process) || this._connected) {
+        logger.log("DanmakuService.start detected existing process, stopping previous instance first");
+        await this.stopInternal();
+      }
 
-    const { scriptPath, usePython, pythonPath } = this.resolveScriptPaths();
-    this.logBinaryDiagnostics(scriptPath, usePython, pythonPath);
-    logger.log("Spawning:", usePython ? pythonPath : scriptPath, "script:", scriptPath);
-    this.process = this.spawnProcess(scriptPath, usePython, pythonPath);
-    this.bindProcessEvents(this.process);
-    await this.waitForConnection();
+      this.config = config;
+      this.keywordFilter.updateRules(config.keywords, config.minMedalLevel ?? 0);
+      logger.log("DanmakuService.start, roomId:", config.roomId);
 
-    await this.request("start", {
-      roomId: config.roomId,
-      credentials: config.credentials,
+      const { scriptPath, usePython, pythonPath } = this.resolveScriptPaths();
+
+      // Windows 打包态下，先按 run.exe 绝对路径清理历史残留，避免“断开后遗留孤儿进程”继续叠加。
+      // 仅在 run.exe 可执行模式启用，开发态 python run.py 不做该清理。
+      this.cleanupStaleBundledRunExeIfNeeded(scriptPath, usePython);
+
+      logger.log("Spawning:", usePython ? pythonPath : scriptPath, "script:", scriptPath);
+      const spawned = this.spawnProcess(scriptPath, usePython, pythonPath);
+      this.process = spawned;
+      this.launchedRunExePath = process.platform === "win32" && !usePython ? scriptPath : null;
+      this.bindProcessEvents(spawned);
+
+      try {
+        await this.waitForConnection();
+        await this.request("start", {
+          roomId: config.roomId,
+          credentials: config.credentials,
+        });
+        this._connected = true;
+      } catch (e) {
+        // 启动失败时确保不会遗留子进程
+        await this.stopInternal();
+        throw e;
+      }
     });
-    this._connected = true;
   }
 
   /** 解析 Python 脚本和解释器路径 */
@@ -219,26 +225,12 @@ export class DanmakuService extends EventEmitter {
 
     const exePath = join(basePath, "run.exe");
     const binPath = join(basePath, "run");
-    const runtimeExePath = join(basePath, "run", "run.exe");
-    const runtimeBinPath = join(basePath, "run", "run");
     const pyPath = join(basePath, "run.py");
 
     if (!isDevMode) {
-      if (isWin && fs.existsSync(runtimeExePath)) return { scriptPath: runtimeExePath, usePython: false, pythonPath };
-      if (!isWin && fs.existsSync(runtimeBinPath)) return { scriptPath: runtimeBinPath, usePython: false, pythonPath };
       if (isWin && fs.existsSync(exePath)) return { scriptPath: exePath, usePython: false, pythonPath };
       if (!isWin && fs.existsSync(binPath)) return { scriptPath: binPath, usePython: false, pythonPath };
       if (fs.existsSync(pyPath)) return { scriptPath: pyPath, usePython: true, pythonPath };
-      logger.error("DanmakuService resolveScriptPaths failed", {
-        basePath,
-        runtimeExePath,
-        runtimeBinPath,
-        exePath,
-        binPath,
-        pyPath,
-        resourcesPath: process.resourcesPath,
-        appPath: require("electron").app.getAppPath(),
-      });
       throw new Error("未找到 danmaku-core 脚本");
     }
     return { scriptPath: pyPath, usePython: true, pythonPath };
@@ -246,11 +238,6 @@ export class DanmakuService extends EventEmitter {
 
   /** 根据平台和脚本类型创建子进程 */
   private spawnProcess(scriptPath: string, usePython: boolean, pythonPath: string): ChildProcess {
-    if (!fs.existsSync(scriptPath)) {
-      logger.error("DanmakuService spawn target does not exist", { scriptPath, usePython, pythonPath });
-      throw new Error(`Danmaku core binary not found: ${scriptPath}`);
-    }
-
     if (process.platform === "win32") {
       if (usePython) {
         return spawn(pythonPath, ["-X", "utf8", scriptPath, "receiver"], {
@@ -285,27 +272,20 @@ export class DanmakuService extends EventEmitter {
         if (text.trim()) {
           stderrData += text;
           for (const line of text.trim().split("\n")) {
-            if (line.trim()) logger.warn("[Python]", line.trim());
+            if (line.trim()) logger.log("[Python]", line.trim());
           }
         }
       } catch {}
     });
     proc.on("close", (code) => {
-      logger.warn("Python process closed", { code, stderrPreview: stderrData.substring(0, 500) });
+      logger.log("Python process closed, code:", code);
       this._connected = false;
       if (code !== 0 && stderrData) {
         this.emit("error", { error: `Python 进程异常退出 (${code}): ${stderrData.substring(0, 500)}` });
       }
       this.emit("disconnected", { code });
     });
-    proc.on("error", (err) => {
-      logger.error("Python process spawn error", {
-        message: err.message,
-        name: err.name,
-        stack: err.stack,
-      });
-      this.emit("error", { error: err.message });
-    });
+    proc.on("error", (err) => { this.emit("error", { error: err.message }); });
   }
 
   /** 等待 Python 进程上报连接就绪，最多 3 秒 */
@@ -322,14 +302,19 @@ export class DanmakuService extends EventEmitter {
    * 流程：发送 stop 请求 → 关闭 stdin → 等待进程退出（2s）→ 强制 kill。
    */
   async stop(): Promise<void> {
+    return this.enqueueLifecycle(async () => {
+      await this.stopInternal();
+    });
+  }
+
+  /** 停止当前子进程（调用方需确保已串行） */
+  private async stopInternal(): Promise<void> {
     const proc = this.process;
+    const pid = proc?.pid;
     if (!proc) {
       this._connected = false;
       return;
     }
-
-    const procPid = proc.pid ?? null;
-    logger.log("Stopping danmaku service", { pid: procPid });
 
     try {
       await this.request("stop", {});
@@ -341,21 +326,75 @@ export class DanmakuService extends EventEmitter {
     proc.stdin?.end();
     
     // 等待进程退出
-    const exitedGracefully = await this.waitForProcessExit(proc, 2000);
+    await this.waitForProcessExit(proc, 2000);
     
     if (proc.exitCode === null) {
-      logger.warn("Danmaku service did not exit in time, forcing shutdown", { pid: procPid });
       this.forceKill(proc);
       await this.waitForProcessExit(proc, 2000);
     }
 
-    if (!exitedGracefully && proc.exitCode === null) {
-      logger.error("Danmaku service process still alive after force kill", { pid: procPid });
-    }
+    // Windows + PyInstaller(onefile) 场景下，父进程退出后子进程仍可能残留。
+    // 这里按原始 PID 再做一次进程树清理兜底（不存在时 taskkill 会返回非零，可忽略）。
+    if (process.platform === "win32" && pid) {
+      this.killProcessTreeByPid(pid);
 
+      // 若是 run.exe 打包模式，再按绝对路径清理一次同名残留，避免 PID 失联的孤儿进程残存。
+      if (this.launchedRunExePath) {
+        this.killRunExeByExactPath(this.launchedRunExePath);
+      }
+    }
+    
     this.process = null;
-    this.rejectPendingRequests(new Error("Danmaku service stopped"));
-    logger.log("Danmaku service stopped", { pid: procPid, exitCode: proc.exitCode });
+    this.launchedRunExePath = null;
+    this.pendingRequests.clear();
+  }
+
+  /**
+   * Windows 打包态：启动前清理历史 run.exe 残留（按绝对路径匹配），避免多实例叠加。
+   * 只清理当前应用打包出来的 danmaku-core/run.exe，不影响系统其他同名进程。
+   */
+  private cleanupStaleBundledRunExeIfNeeded(scriptPath: string, usePython: boolean): void {
+    if (process.platform !== "win32") return;
+    if (usePython) return;
+    const normalizedName = scriptPath.replace(/\\/g, "/").toLowerCase();
+    if (!normalizedName.endsWith("/run.exe")) return;
+    this.killRunExeByExactPath(scriptPath);
+  }
+
+  /**
+   * Windows: 仅结束“可执行路径完全匹配”的 run.exe 进程。
+   * 采用 CIM 查询 + Stop-Process，避免 taskkill /IM run.exe 误杀其他软件。
+   */
+  private killRunExeByExactPath(executablePath: string): void {
+    const escapedPath = executablePath.replace(/'/g, "''");
+    const script = [
+      `$target = [System.IO.Path]::GetFullPath('${escapedPath}')`,
+      "$targetLower = $target.ToLowerInvariant()",
+      "Get-CimInstance Win32_Process -Filter \"Name = 'run.exe'\" |",
+      "  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath).ToLowerInvariant() -eq $targetLower) } |",
+      "  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+    ].join(" ");
+
+    try {
+      spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    } catch {
+      // 忽略查询/权限异常，不中断主流程
+    }
+  }
+
+  /** Windows: 按 PID 强制结束整个进程树（含子进程） */
+  private killProcessTreeByPid(pid: number): void {
+    try {
+      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    } catch {
+      // 忽略不存在/权限等错误，避免影响主流程
+    }
   }
 
   updateKeywords(keywords: KeywordRule[]): void {
@@ -522,14 +561,6 @@ this._connected = true;
     });
   }
 
-  private rejectPendingRequests(error: Error): void {
-    for (const [id, pending] of this.pendingRequests.entries()) {
-      clearTimeout(pending.timeout);
-      pending.reject(error);
-      this.pendingRequests.delete(id);
-    }
-  }
-
   /**
    * 强制终止子进程。
    * Windows：先 process.kill(pid) 再 proc.kill(SIGKILL)
@@ -540,27 +571,8 @@ this._connected = true;
     if (process.platform === "win32") {
       const pid = proc.pid;
       if (pid) {
-        try {
-          const result = spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
-            stdio: "ignore",
-            windowsHide: true,
-          });
-          if (result.status === 0) {
-            logger.warn("Killed danmaku service process tree", { pid });
-            return;
-          }
-          logger.warn("taskkill did not fully terminate danmaku service", {
-            pid,
-            status: result.status,
-            signal: result.signal,
-          });
-        } catch (error) {
-          logger.warn("taskkill failed for danmaku service", {
-            pid,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-
+        // 优先按 PID 结束整个进程树，避免 run.exe 子进程残留
+        this.killProcessTreeByPid(pid);
         try {
           process.kill(pid);
         } catch {

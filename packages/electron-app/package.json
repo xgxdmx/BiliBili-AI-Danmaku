@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.bilibili.danmu-claw",
     "productName": "BiliBili AI弹幕姬",
+    "artifactName": "${productName} Setup.${ext}",
     "directories": {
       "output": "../../../dist"
     },
@@ -44,7 +45,7 @@
       "category": "public.app-category.utilities"
     },
     "portable": {
-      "artifactName": "BiliBili弹幕Claw-${version}.exe"
+      "artifactName": "${productName}.${ext}"
     },
     "nsis": {
       "oneClick": false,

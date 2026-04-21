@@ -19,6 +19,7 @@ node_modules/
 *.tsbuildinfo
 
 # PyInstaller 输出
+.build/
 build/
 *.toc
 *.zip
@@ -35,6 +36,11 @@ packages/danmaku-core/build/
 packages/danmaku-core/receiver.exe
 packages/danmaku-core/run.exe
 packages/danmaku-core/sender.exe
+
+# PyInstaller one-folder 运行时产物（含大量 dll/pyd）
+packages/danmaku-core/runtime/
+packages/danmaku-core/**/*.dll
+packages/danmaku-core/**/*.pyd
 
 # scripts（排除 read-config.js 用于本地调试）
 !/scripts
