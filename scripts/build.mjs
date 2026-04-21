@@ -17,7 +17,7 @@
  * - Windows Runner 打包失败时输出可定位日志。
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -180,6 +180,40 @@ function getElectronBuilderTarget() {
 function getPlatformLabel() {
   if (isWin) return "Windows";
   return "Linux";
+}
+
+/**
+ * 解析 electron-builder CLI 实际路径。
+ *
+ * 兼容优先级：
+ * 1) npm/pnpm 常见扁平路径：node_modules/electron-builder/cli.js
+ * 2) pnpm store 链接路径：node_modules/.pnpm/<pkg>/node_modules/electron-builder/cli.js
+ */
+function resolveElectronBuilderCli() {
+  const directPath = path.join(ROOT, "node_modules", "electron-builder", "cli.js");
+  if (existsSync(directPath)) {
+    return directPath;
+  }
+
+  const pnpmStoreDir = path.join(ROOT, "node_modules", ".pnpm");
+  if (existsSync(pnpmStoreDir)) {
+    for (const entry of readdirSync(pnpmStoreDir)) {
+      if (!entry.startsWith("electron-builder@")) continue;
+      const candidate = path.join(
+        pnpmStoreDir,
+        entry,
+        "node_modules",
+        "electron-builder",
+        "cli.js",
+      );
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  logFail("electron-builder CLI not found in node_modules");
+  process.exit(1);
 }
 
 /**
@@ -404,9 +438,8 @@ function buildElectron() {
   requirePath(deployDir, ".deploy directory");
   patchDeployPackage();
 
-  run(pnpmCmd, [
-    "exec",
-    "electron-builder",
+  run("node", [
+    resolveElectronBuilderCli(),
     "--projectDir",
     "./.deploy",
     ...getElectronBuilderTarget(),
