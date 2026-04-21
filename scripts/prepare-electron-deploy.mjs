@@ -76,12 +76,20 @@ for (const dir of dirsToCopy) {
 }
 
 const isWin = process.platform === "win32";
+const installArgs = [
+  "install",
+  "--prod",
+  "--ignore-workspace",
+  "--no-frozen-lockfile",
+  "--config.ignore-workspace-root-check=true",
+  "--shamefully-hoist",
+];
 // 关键点：在 .deploy 目录原地安装 prod 依赖，避免“先安装后复制”导致 pnpm 依赖链损坏。
 const installResult = spawnSync(
   isWin ? (process.env.ComSpec || "cmd.exe") : "pnpm",
   isWin
-    ? ["/d", "/s", "/c", "pnpm.cmd", "install", "--prod", "--config.ignore-workspace-root-check=true", "--shamefully-hoist"]
-    : ["install", "--prod", "--config.ignore-workspace-root-check=true", "--shamefully-hoist"],
+    ? ["/d", "/s", "/c", "pnpm.cmd", ...installArgs]
+    : installArgs,
   {
     cwd: deployDir,
     stdio: "inherit",
