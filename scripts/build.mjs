@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 
 /**
- * Unified packaging entry for CI and local release builds.
+ * CI 与本地发布共用的统一打包入口。
  *
- * High-level pipeline:
- * 1) Build Python runtime via PyInstaller (onedir).
- * 2) Stage runtime under packages/danmaku-core/runtime/run.
- * 3) Build Electron app and prepare .deploy project.
- * 4) Patch deploy-time NSIS options for Windows.
- * 5) Package with electron-builder.
- * 6) Verify packaged runtime is present and runnable.
+ * 构建总流程：
+ * 1) 用 PyInstaller 构建 Python runtime（onedir）。
+ * 2) 将 runtime 暂存到 packages/danmaku-core/runtime/run。
+ * 3) 构建 Electron 应用并准备 .deploy 项目。
+ * 4) 在部署目录中补丁 Windows 的 NSIS 配置。
+ * 5) 调用 electron-builder 打包。
+ * 6) 验证打包产物中的 runtime 存在且可运行。
  *
- * Why this script exists:
- * - Keep release steps deterministic across local and GitHub Actions.
- * - Fail fast on missing runtime artifacts.
- * - Emit actionable logs when packaging fails on Windows runners.
+ * 设计目的：
+ * - 保证本地与 GitHub Actions 发布步骤一致且可复现。
+ * - runtime 缺失时快速失败，避免生成无效安装包。
+ * - Windows Runner 打包失败时输出可定位日志。
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -45,13 +45,13 @@ function logInfo(msg) { console.log(`  ${YELLOW}→${RESET} ${msg}`); }
 function logFail(msg) { console.error(`  ${RED}✖${RESET} ${msg}`); }
 
 /**
- * Run a command with robust cross-platform behavior and full diagnostics.
+ * 统一执行外部命令，提供跨平台兼容和完整诊断输出。
  *
- * Important behaviors:
- * - On Windows, ".cmd" commands are routed through "cmd.exe /d /s /c".
- * - stdout/stderr are always captured then replayed, so CI logs are preserved.
- * - Non-zero exit codes throw explicit errors with command context.
- * - windowsHide=true avoids transient console windows during packaging.
+ * 关键行为：
+ * - Windows 下 ".cmd" 命令统一通过 "cmd.exe /d /s /c" 调起。
+ * - 始终捕获并回放 stdout/stderr，保证 CI 日志可见。
+ * - 非零退出码会抛出带命令上下文的错误。
+ * - windowsHide=true 避免打包阶段额外弹出控制台窗口。
  */
 function run(cmd, args, options = {}) {
   const cwd = options.cwd || ROOT;
@@ -90,8 +90,8 @@ function run(cmd, args, options = {}) {
 }
 
 /**
- * Best-effort command probe.
- * Used for interpreter discovery and optional checks where failure is expected.
+ * 尝试执行命令（容错探测）。
+ * 用于解释器发现或允许失败的探测场景。
  */
 function tryRun(cmd, args, options = {}) {
   try {
@@ -128,8 +128,8 @@ function writeJson(filePath, value) {
 }
 
 /**
- * Return pnpm executable command name for current platform.
- * Note: actual ".cmd" execution details are handled in run().
+ * 根据当前平台返回 pnpm 命令名。
+ * 注意：".cmd" 的实际执行细节由 run() 统一处理。
  */
 function getPnpmCmd() {
   return isWin ? "pnpm.cmd" : "pnpm";
@@ -142,9 +142,9 @@ function getVenvPython() {
 }
 
 /**
- * Resolve python interpreter in this order:
- * 1) project virtualenv
- * 2) system python commands
+ * 按顺序解析 Python 解释器：
+ * 1) 项目虚拟环境
+ * 2) 系统 Python 命令
  */
 function getPythonExe() {
   const venvPython = getVenvPython();
@@ -169,8 +169,8 @@ function pipPackageExists(python, pkg) {
 }
 
 /**
- * Compute packaging target args for electron-builder.
- * Current workflow is Windows-focused; non-Windows defaults to Linux AppImage.
+ * 计算 electron-builder 的目标参数。
+ * 当前流程以 Windows 为主，非 Windows 默认走 Linux AppImage。
  */
 function getElectronBuilderTarget() {
   if (isWin) return ["--win", "nsis"];
@@ -183,9 +183,8 @@ function getPlatformLabel() {
 }
 
 /**
- * Resolve local electron-builder CLI path from node_modules.
- * We invoke it directly to avoid recursive pnpm exec wrappers
- * hiding important failure output in CI.
+ * 从 node_modules 解析本地 electron-builder CLI 路径。
+ * 直接调用 CLI，避免被 pnpm 递归 exec 包装后吞掉关键错误日志。
  */
 function getElectronBuilderCli() {
   const candidates = [
@@ -204,8 +203,8 @@ function getElectronBuilderCli() {
 }
 
 /**
- * Remove build outputs and stale runtime artifacts.
- * Safe to call repeatedly.
+ * 清理构建产物和陈旧 runtime 文件。
+ * 可重复调用，不依赖调用顺序。
  */
 function clean() {
   logStep("Clean build artifacts");
@@ -232,8 +231,8 @@ function clean() {
 }
 
 /**
- * Ensure required Python dependencies exist.
- * Installs only missing packages to reduce CI variance.
+ * 确保 Python 依赖齐全。
+ * 仅安装缺失包，降低 CI 波动。
  */
 function installPythonDeps(python) {
   logStep("Python: check dependencies");
@@ -254,8 +253,8 @@ function installPythonDeps(python) {
 }
 
 /**
- * Build Python runtime as PyInstaller onedir output, then stage it
- * under packages/danmaku-core/runtime/run for electron extraResources.
+ * 将 Python runtime 构建为 PyInstaller onedir 产物，
+ * 并暂存到 packages/danmaku-core/runtime/run 供 Electron extraResources 打包。
  */
 function buildPython() {
   logStep("Python: find interpreter");
@@ -308,7 +307,7 @@ function buildPython() {
 }
 
 /**
- * Guard that staged runtime exists before electron packaging starts.
+ * 在 Electron 打包前校验 runtime 已正确暂存。
  */
 function verifyRuntimeStaged() {
   const runtimeExe = path.join(RUNTIME_RUN_DIR, isWin ? "run.exe" : "run");
@@ -317,10 +316,10 @@ function verifyRuntimeStaged() {
 }
 
 /**
- * Runtime smoke test:
- * - Executes runtime binary with no args.
- * - Treats known "usage" style exits as acceptable for probe runs.
- * - Fails hard for launch/runtime loader issues (DLL/import errors, etc.).
+ * runtime 冒烟测试：
+ * - 直接执行 runtime 二进制（不传参数）。
+ * - 对已知的 "usage" 类退出视为可接受探测结果。
+ * - 对启动失败/加载失败（如 DLL、import 错误）直接判失败。
  */
 function smokeTestRuntime(runtimeExe, label) {
   logStep(`Runtime smoke test: ${label}`);
@@ -359,8 +358,8 @@ function smokeTestRuntime(runtimeExe, label) {
 }
 
 /**
- * Patch generated .deploy package.json for Windows installer behavior.
- * Applied at deploy time so source package.json remains minimal.
+ * 修改 .deploy/package.json 中的 Windows 安装器行为配置。
+ * 只在部署目录生效，保持源 package.json 简洁。
  */
 function patchDeployPackage() {
   const deployPkgPath = path.join(ELECTRON_APP, ".deploy", "package.json");
@@ -385,8 +384,8 @@ function patchDeployPackage() {
 }
 
 /**
- * Verify runtime embedded in packaged app output.
- * Currently implemented for Windows, where regressions were observed.
+ * 验证打包产物中是否包含可执行 runtime。
+ * 当前仅在 Windows 路径实现（历史回归主要发生在该平台）。
  */
 function verifyPackagedRuntime() {
   logStep(`Electron: verify packaged runtime (${getPlatformLabel()})`);
@@ -402,13 +401,13 @@ function verifyPackagedRuntime() {
 }
 
 /**
- * Electron packaging phase:
- * - install deps
- * - build renderer/main
- * - prepare deploy folder
- * - run electron-builder
- * - finalize artifacts
- * - run post-package runtime checks on Windows
+ * Electron 打包阶段：
+ * - 安装依赖
+ * - 构建 renderer/main
+ * - 准备 deploy 目录
+ * - 执行 electron-builder
+ * - 整理最终产物
+ * - Windows 下做打包后 runtime 校验
  */
 function buildElectron() {
   logStep(`Electron: prepare package (${getPlatformLabel()})`);
@@ -445,11 +444,11 @@ function buildElectron() {
 }
 
 /**
- * CLI entry:
+ * CLI 入口参数：
  * - clean
  * - python
  * - electron
- * - all (default)
+ * - all（默认）
  */
 const arg = process.argv[2] || "all";
 
