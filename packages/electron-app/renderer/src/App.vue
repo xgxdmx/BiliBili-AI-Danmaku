@@ -44,14 +44,31 @@ const closeDialogRemember = ref(false);
 
 /** 向主进程提交关闭确认结果 */
 async function submitCloseDialogDecision(action: CloseDialogAction): Promise<void> {
-  const requestId = closeDialogRequestId.value;
-  if (!requestId) return;
   try {
-    await window.danmakuAPI.respondCloseConfirm({
-      requestId,
-      action,
-      remember: closeDialogRemember.value,
-    });
+    const requestId = closeDialogRequestId.value;
+    if (requestId) {
+      await window.danmakuAPI.respondCloseConfirm({
+        requestId,
+        action,
+        remember: closeDialogRemember.value,
+      });
+    } else {
+      // 兜底：requestId 丢失时仍然确保按钮动作必达
+      await window.danmakuAPI.submitCloseConfirmAction({
+        action,
+        remember: closeDialogRemember.value,
+      });
+    }
+  } catch {
+    // invoke 异常时再走一次无 requestId 直达通道
+    try {
+      await window.danmakuAPI.submitCloseConfirmAction({
+        action,
+        remember: closeDialogRemember.value,
+      });
+    } catch {
+      // ignore
+    }
   } finally {
     closeDialogVisible.value = false;
     closeDialogRequestId.value = "";

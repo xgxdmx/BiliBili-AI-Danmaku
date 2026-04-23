@@ -8,38 +8,22 @@
 //   4. 进程退出清理（SIGINT / SIGTERM / window-all-closed）
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, Menu, dialog, nativeTheme, Tray, session as electronSession } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, Tray } from "electron";
 import { join } from "path";
 import { DanmakuService } from "./danmaku-service";
-import { getConfig, setConfigPath, exportConfigToFile, importConfigFromFile, importConfigFromContent } from "./config-store";
+import { getConfig, setConfigPath, type CloseWindowBehavior } from "./config-store";
 import { AIRelayManager, type AIRelayStatus } from "./ai-relay";
 import { QuickReplyEngine } from "./quick-reply-engine";
+import type { MainAppContext } from "./app-context";
 import { logger } from "./logger";
-
-/** B站登录页地址，用于弹出独立登录窗口 */
-const BILI_LOGIN_URL = "https://passport.bilibili.com/login";
+import { createAppShellController, getAppIconPath } from "./app-shell";
+import { clearElectronRuntimeCachesOnExit } from "./runtime-cache";
+import { registerAuthIpcHandlers } from "./auth-window";
+import { registerConfigIpcHandlers } from "./config-ipc";
+import { registerAiIpcHandlers } from "./ai-ipc";
 
 /** B站登录子窗口引用（同一时刻只允许一个） */
 let biliLoginWindow: BrowserWindow | null = null;
-
-/**
- * 从 Electron session 中提取 B站登录 Cookie。
- * 在登录窗口 cookie 变更时调用，自动抓取 SESSDATA / bili_jct / buvid3。
- */
-async function getCredentialCookiesFromElectronSession(targetWin: BrowserWindow): Promise<{
-  sessdata: string;
-  biliJct: string;
-  buvid3: string;
-}> {
-  const cookieStore = targetWin.webContents.session.cookies;
-  const allCookies = await cookieStore.get({});
-  const getCookie = (name: string): string => allCookies.find((c) => c.name === name)?.value || "";
-  return {
-    sessdata: getCookie("SESSDATA"),
-    biliJct: getCookie("bili_jct"),
-    buvid3: getCookie("buvid3"),
-  };
-}
 
 
 // ─── 全局状态 ──────────────────────────────────────────────
@@ -56,8 +40,6 @@ let quickReplyEngine: QuickReplyEngine | null = null;
 let appTray: Tray | null = null;
 /** 是否进入退出流程（用于区分“关闭窗口”与“真正退出应用”） */
 let isAppQuitting = false;
-/** 等待渲染进程返回关闭确认结果的 Promise resolver */
-let pendingCloseDecisionResolver: ((payload: { requestId: string; action: CloseWindowDialogAction; remember: boolean }) => void) | null = null;
 /** 当前关闭确认请求 ID */
 let pendingCloseDecisionRequestId: string | null = null;
 
@@ -82,195 +64,56 @@ let latestAIStatus: AIRelayStatus = {
 /** 防止重复清理（cleanupBeforeExit 可能被多个退出信号同时触发） */
 let isCleanupRunning = false;
 
-/** 关闭窗口行为 */
-type CloseWindowBehavior = "ask" | "tray" | "exit";
-/** 关闭确认弹窗动作 */
-type CloseWindowDialogAction = "tray" | "exit" | "cancel";
+const appContext: MainAppContext = {
+  getMainWindow: () => mainWindow,
+  setMainWindow: (window) => {
+    mainWindow = window;
+  },
+  getBiliLoginWindow: () => biliLoginWindow,
+  setBiliLoginWindow: (window) => {
+    biliLoginWindow = window;
+  },
+  getDanmakuService: () => danmakuService,
+  setDanmakuService: (service) => {
+    danmakuService = service;
+  },
+  getAIRelay: () => aiRelay,
+  setAIRelay: (relay) => {
+    aiRelay = relay;
+  },
+  getQuickReplyEngine: () => quickReplyEngine,
+  setQuickReplyEngine: (engine) => {
+    quickReplyEngine = engine;
+  },
+  getAppTray: () => appTray,
+  setAppTray: (tray) => {
+    appTray = tray;
+  },
+  getIsAppQuitting: () => isAppQuitting,
+  setIsAppQuitting: (value) => {
+    isAppQuitting = value;
+  },
+  getPendingCloseDecisionRequestId: () => pendingCloseDecisionRequestId,
+  setPendingCloseDecisionRequestId: (value) => {
+    pendingCloseDecisionRequestId = value;
+  },
+  getLatestAIStatus: () => latestAIStatus,
+  setLatestAIStatus: (status) => {
+    latestAIStatus = status;
+  },
+  getCloseWindowBehavior: () => (getConfig().closeWindowBehavior || "ask") as CloseWindowBehavior,
+  setCloseWindowBehavior: (value) => {
+    setConfigPath("closeWindowBehavior", value);
+  },
+  applyCloseDecision: () => {
+    throw new Error("applyCloseDecision is not ready before appShell initialization");
+  },
+};
 
-/** 统一应用图标路径（窗口图标 + 托盘图标） */
-function getAppIconPath(): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, "resources", "icon.ico")
-    : join(__dirname, "../../build/icon.ico");
-}
-
-/** 将主窗口显示到前台 */
-function showMainWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
-}
-
-/** 将主窗口隐藏到托盘后台 */
-function hideMainWindowToTray(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.hide();
-}
-
-/**
- * 退出前清理 Electron/Chromium 运行缓存（仅清理可再生缓存，不动业务配置）。
- * 目标：减少 Roaming 下的缓存残留，同时避免影响 config.json 等业务数据。
- */
-async function clearElectronRuntimeCachesOnExit(): Promise<void> {
-  const sessions = new Set<Electron.Session>();
-
-  // 默认会话（主窗口通常在这里）
-  sessions.add(electronSession.defaultSession);
-
-  // 主窗口会话
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    sessions.add(mainWindow.webContents.session);
-  }
-
-  // 登录窗口会话
-  if (biliLoginWindow && !biliLoginWindow.isDestroyed()) {
-    sessions.add(biliLoginWindow.webContents.session);
-  }
-
-  for (const ses of sessions) {
-    // 每个缓存清理都带超时，避免异常阻塞退出流程
-    const withTimeout = async (fn: Promise<unknown>, timeoutMs: number): Promise<void> => {
-      await Promise.race([
-        fn.then(() => undefined).catch(() => undefined),
-        new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
-      ]);
-    };
-
-    // HTTP 缓存
-    await withTimeout(ses.clearCache(), 1500);
-
-    // 仅清理可再生缓存类存储，不清理 localStorage/indexedDB/cookies
-    await withTimeout(
-      ses.clearStorageData({
-        storages: ["appcache", "shadercache", "cachestorage", "serviceworkers"],
-      }),
-      1500,
-    );
-  }
-}
-
-/**
- * 请求渲染进程显示主题化关闭确认弹窗，并等待用户选择。
- * 若超时或窗口不可用，默认返回 cancel，避免误退出。
- */
-async function requestCloseDecisionFromRenderer(): Promise<{ action: CloseWindowDialogAction; remember: boolean }> {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return { action: "cancel", remember: false };
-  }
-
-  // 避免并发弹多个关闭确认框
-  if (pendingCloseDecisionResolver) {
-    return { action: "cancel", remember: false };
-  }
-
-  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  pendingCloseDecisionRequestId = requestId;
-
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      pendingCloseDecisionResolver = null;
-      pendingCloseDecisionRequestId = null;
-      resolve({ action: "cancel", remember: false });
-    }, 60_000);
-
-    pendingCloseDecisionResolver = (payload) => {
-      if (payload.requestId !== requestId) return;
-      clearTimeout(timeout);
-      pendingCloseDecisionResolver = null;
-      pendingCloseDecisionRequestId = null;
-      resolve({ action: payload.action, remember: payload.remember });
-    };
-
-    mainWindow?.webContents.send("window:closeConfirmRequested", {
-      requestId,
-      message: "关闭窗口时你希望如何处理？",
-      detail:
-        "选择“最小化到托盘后台运行”后，弹幕接收、匹配、过滤、固定回复与 AI 回复会继续运行，可通过托盘图标恢复到前台。",
-    });
-  });
-}
-
-/** 创建托盘图标和菜单（仅创建一次） */
-function ensureTray(): void {
-  if (appTray) return;
-  appTray = new Tray(getAppIconPath());
-  appTray.setToolTip("BiliBili弹幕Claw");
-  appTray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: "显示主界面",
-        click: () => showMainWindow(),
-      },
-      {
-        label: "隐藏到后台",
-        click: () => hideMainWindowToTray(),
-      },
-      { type: "separator" },
-      {
-        label: "退出",
-        click: () => {
-          isAppQuitting = true;
-          app.quit();
-        },
-      },
-    ]),
-  );
-
-  // 单击托盘图标：切换显示/隐藏
-  appTray.on("click", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isVisible()) {
-      hideMainWindowToTray();
-    } else {
-      showMainWindow();
-    }
-  });
-
-  // 双击托盘图标：总是显示主界面
-  appTray.on("double-click", () => {
-    showMainWindow();
-  });
-}
-
-/**
- * 处理主窗口关闭请求：
- * - tray: 隐藏到托盘后台运行
- * - exit: 直接退出
- * - ask: 弹出三选一 + 可记住本次选择
- */
-async function handleMainWindowCloseRequest(): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-
-  const currentBehavior = (getConfig().closeWindowBehavior || "ask") as CloseWindowBehavior;
-  if (currentBehavior === "tray") {
-    hideMainWindowToTray();
-    return;
-  }
-  if (currentBehavior === "exit") {
-    isAppQuitting = true;
-    mainWindow.close();
-    return;
-  }
-
-  const result = await requestCloseDecisionFromRenderer();
-
-  if (result.action === "tray") {
-    if (result.remember) {
-      setConfigPath("closeWindowBehavior", "tray");
-    }
-    hideMainWindowToTray();
-    return;
-  }
-
-  if (result.action === "exit") {
-    if (result.remember) {
-      setConfigPath("closeWindowBehavior", "exit");
-    }
-    isAppQuitting = true;
-    mainWindow.close();
-  }
-}
+const appShell = createAppShellController(appContext);
+appContext.applyCloseDecision = (action, remember) => {
+  appShell.applyCloseDecision(action, remember);
+};
 
 /** 应用退出前清理：停止弹幕服务 → 断开 AI → 关闭登录窗口 */
 async function cleanupBeforeExit(): Promise<void> {
@@ -287,7 +130,7 @@ async function cleanupBeforeExit(): Promise<void> {
     aiRelay?.disconnect();
 
     // 退出时清理部分 Electron 运行缓存，减少 Roaming 目录冗余文件
-    await clearElectronRuntimeCachesOnExit();
+    await clearElectronRuntimeCachesOnExit({ mainWindow, biliLoginWindow });
 
     if (biliLoginWindow && !biliLoginWindow.isDestroyed()) {
       try {
@@ -360,7 +203,7 @@ function createWindow(): void {
   mainWindow.on("close", (event) => {
     if (isAppQuitting) return;
     event.preventDefault();
-    void handleMainWindowCloseRequest();
+    void appShell.handleMainWindowCloseRequest();
   });
 }
 
@@ -413,6 +256,7 @@ function registerIpcHandlers(): void {
   if (!quickReplyEngine) {
     quickReplyEngine = new QuickReplyEngine();
     const initialConfig = getConfig();
+    quickReplyEngine.setEnabled(initialConfig.quickReplyEnabled);
     if (initialConfig.quickReplies) {
       quickReplyEngine.updateRules(initialConfig.quickReplies);
     }
@@ -453,12 +297,14 @@ danmakuService.on("danmaku", (data) => {
         }
 
         // 固定回复全局开关：关闭时完全不触发固定回复
-        const quickReplyEnabled = getConfig().quickReplyEnabled === true;
-        if (quickReplyEligible && quickReplyEnabled) {
-          const quickMatch = quickReplyEngine?.match(content);
-          if (quickMatch && danmakuService) {
-            danmakuService.sendDanmaku({ msg: quickMatch.reply }).catch(() => {});
-          }
+        const quickReplyEnabled = getConfig().quickReplyEnabled;
+        const quickMatch = quickReplyEligible && quickReplyEnabled
+          ? (quickReplyEngine?.match(content) ?? null)
+          : null;
+        const quickReplyHandled = Boolean(quickMatch && danmakuService);
+
+        if (quickMatch && danmakuService) {
+          danmakuService.sendDanmaku({ msg: quickMatch.reply }).catch(() => {});
         }
 
         // ── AI 回复路由 ──
@@ -475,7 +321,8 @@ danmakuService.on("danmaku", (data) => {
           aiEligible = true;
         }
 
-        if (aiEligible && aiRelay && !aiRelay.shouldIgnoreIncoming(data)) {
+        // 固定回复优先级高于 AI：一旦命中固定回复，本条弹幕不再进入 AI 队列。
+        if (!quickReplyHandled && aiEligible && aiRelay && !aiRelay.shouldIgnoreIncoming(data)) {
           aiRelay.enqueue(data);
         }
       });
@@ -577,339 +424,9 @@ danmakuService.on("danmaku", (data) => {
     return { status: "ok" };
   });
 
-  // ─── 配置 IPC ─────────────────────────────────────────────
-
-  /** 渲染进程返回关闭确认弹窗结果 */
-  ipcMain.handle(
-    "window:closeConfirmRespond",
-    async (
-      _event,
-      payload: { requestId?: string; action?: CloseWindowDialogAction; remember?: boolean },
-    ) => {
-      const requestId = String(payload?.requestId || "");
-      const action = payload?.action;
-      const remember = Boolean(payload?.remember);
-
-      if (!requestId || !pendingCloseDecisionRequestId || requestId !== pendingCloseDecisionRequestId) {
-        return { status: "ignored" };
-      }
-      if (action !== "tray" && action !== "exit" && action !== "cancel") {
-        return { status: "ignored" };
-      }
-
-      pendingCloseDecisionResolver?.({ requestId, action, remember });
-      return { status: "ok" };
-    },
-  );
-
-  /** 导入配置后同步到运行时引擎 */
-  const syncConfigToEngines = (): void => {
-    if (danmakuService) {
-      danmakuService.updateKeywords(getConfig().keywords);
-      danmakuService.updateMinMedalLevel(getConfig().room?.minMedalLevel || 0);
-    }
-    if (quickReplyEngine) {
-      quickReplyEngine.updateRules(getConfig().quickReplies || []);
-    }
-  };
-
-  /** 读取完整配置 */
-  ipcMain.handle("config:get", async () => {
-    return getConfig();
-  });
-
-  /** 按路径设置配置值（如 "aiModel.prompt"） */
-  ipcMain.handle("config:set", async (_event, key: string, value: unknown) => {
-    try {
-      setConfigPath(key, value);
-      return { status: "ok" };
-    } catch (e: unknown) {
-      return { status: "error", message: String(e) };
-    }
-  });
-
-  /** 弹出文件对话框导出配置到 JSON（可选是否包含敏感信息） */
-  ipcMain.handle("config:export", async (_event, options?: { includeSensitive?: boolean }) => {
-    const defaultPath = app.isPackaged
-      ? join(app.getPath("documents"), "config-export.json")
-      : join(process.cwd(), "config-export.json");
-    const result = mainWindow
-      ? await dialog.showSaveDialog(mainWindow, {
-          title: "导出配置",
-          defaultPath,
-          filters: [{ name: "JSON 文件", extensions: ["json"] }],
-          properties: ["createDirectory", "showOverwriteConfirmation"],
-        })
-      : await dialog.showSaveDialog({
-          title: "导出配置",
-          defaultPath,
-          filters: [{ name: "JSON 文件", extensions: ["json"] }],
-          properties: ["createDirectory", "showOverwriteConfirmation"],
-        });
-
-    if (result.canceled || !result.filePath) {
-      return { status: "cancelled" };
-    }
-    return exportConfigToFile(result.filePath, options);
-  });
-
-  /** 从文件路径导入配置 */
-  ipcMain.handle("config:import", async (_event, filePath: string) => {
-    const result = importConfigFromFile(filePath);
-    if (result.status === "ok") syncConfigToEngines();
-    return result;
-  });
-
-  /** 从 JSON 字符串导入配置（用于剪贴板粘贴） */
-  ipcMain.handle("config:importContent", async (_event, content: string) => {
-    const result = importConfigFromContent(content);
-    if (result.status === "ok") syncConfigToEngines();
-    return result;
-  });
-
-  // ─── B站登录 IPC ─────────────────────────────────────────
-
-  /**
-   * 打开 B站登录窗口。窗口内嵌到 passport.bilibili.com，
-   * 监听 cookie 变化自动提取 SESSDATA / bili_jct / buvid3，
-   * 成功后自动关闭窗口并持久化凭证。
-   */
-  ipcMain.handle("auth:openLoginWindow", async () => {
-    if (biliLoginWindow && !biliLoginWindow.isDestroyed()) {
-      biliLoginWindow.focus();
-      return { status: "ok", state: "opened" as const, message: "登录窗口已打开" };
-    }
-
-    const parent = mainWindow || undefined;
-    biliLoginWindow = new BrowserWindow({
-      width: 980,
-      height: 760,
-      parent,
-      modal: false,
-      autoHideMenuBar: true,
-      title: "B站登录",
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-
-    const win = biliLoginWindow;
-    const sendLoginStatus = (payload: Record<string, unknown>) => {
-      mainWindow?.webContents.send("auth:loginStatus", payload);
-    };
-
-    const checkAndPersistCookies = async () => {
-      if (!win || win.isDestroyed()) return;
-      try {
-        const creds = await getCredentialCookiesFromElectronSession(win);
-        if (creds.sessdata && creds.biliJct) {
-          setConfigPath("credentials", creds);
-          sendLoginStatus({
-            state: "confirmed",
-            message: "登录成功，已抓取 Cookie",
-            credentials: creds,
-          });
-          try {
-            win.close();
-          } catch {
-            // ignore
-          }
-        }
-      } catch {
-        // ignore intermittent cookie-read failures
-      }
-    };
-
-    // 始终允许检查 cookie（窗口关闭时触发）
-    const onCookieChanged = () => {
-      void checkAndPersistCookies();
-    };
-
-    win.webContents.session.cookies.on("changed", onCookieChanged);
-
-    win.webContents.on("did-finish-load", () => {
-      sendLoginStatus({ state: "opened", message: "请在登录窗口扫码或登录" });
-    });
-
-    // 用户关闭登录窗口时保存 cookie
-    win.on("close", () => {
-      // 尝试保存当前登录的 cookie
-      void checkAndPersistCookies();
-    });
-
-    win.on("closed", () => {
-      try {
-        win.webContents.session.cookies.removeListener("changed", onCookieChanged);
-      } catch {
-        // ignore
-      }
-      if (biliLoginWindow === win) {
-        biliLoginWindow = null;
-      }
-      sendLoginStatus({ state: "closed", message: "登录窗口已关闭" });
-    });
-
-    await win.loadURL(BILI_LOGIN_URL);
-    sendLoginStatus({ state: "opened", message: "登录窗口已打开" });
-    return { status: "ok", state: "opened" as const, message: "登录窗口已打开" };
-  });
-
-  // ─── AI 中继 IPC ─────────────────────────────────────────
-
-  /** 连接 AI 供应商：合并共享配置 + 当前供应商独立配置 → 传入 AIRelayManager.connect() */
-  ipcMain.handle("ai:connect", async () => {
-    if (!aiRelay) {
-      throw new Error("AI relay not ready");
-    }
-    const cfg = getConfig();
-    const aiModel = cfg.aiModel;
-    const providerName = aiModel.provider;
-    const providerCfg = aiModel.providers?.[providerName];
-
-    if (!providerCfg) {
-      throw new Error(`未找到供应商 "${providerName}" 的配置`);
-    }
-
-    await aiRelay.connect({
-      provider: providerName,
-      apiKey: providerCfg.apiKey,
-      modelId: providerCfg.modelId,
-      endpoint: providerCfg.endpoint,
-      prompt: aiModel.prompt,
-      sendIntervalMs: aiModel.sendIntervalMs,
-      maxPending: aiModel.maxPending,
-      skipReplies: Array.isArray(aiModel.skipReplies) ? aiModel.skipReplies : [],
-      ollamaBaseUrl: providerCfg.ollamaBaseUrl,
-      maxTokens: providerCfg.maxTokens,
-      temperature: providerCfg.temperature,
-      topP: providerCfg.topP,
-      ollamaKeepAlive: providerCfg.ollamaKeepAlive,
-      requestTimeoutMs: providerCfg.requestTimeoutMs,
-    });
-
-    const status = aiRelay.getStatus();
-    latestAIStatus = status;
-
-    logger.log("AI connected:", { provider: status.provider, modelId: status.modelId });
-
-    return { status: "ok", message: "连接成功，系统提示词已注入会话上下文" };
-  });
-
-  /** 断开 AI 连接 */
-  ipcMain.handle("ai:disconnect", async () => {
-    aiRelay?.disconnect();
-    latestAIStatus = aiRelay?.getStatus() || latestAIStatus;
-    return { status: "ok" };
-  });
-
-  /** 查询 AI 连接状态（队列长度、处理数、发送/跳过/失败计数等） */
-  ipcMain.handle("ai:getStatus", async () => {
-    return aiRelay?.getStatus() || latestAIStatus;
-  });
-
-  /** 清空 AI 待发送队列 */
-  ipcMain.handle("ai:clearQueue", async () => {
-    if (!aiRelay) {
-      return { status: "ok", cleared: 0 };
-    }
-    const result = aiRelay.clearQueue();
-    latestAIStatus = aiRelay.getStatus();
-    return { status: "ok", ...result };
-  });
-
-  /** 清空 AI 返回预览记录 */
-  ipcMain.handle("ai:clearPreview", async () => {
-    if (!aiRelay) {
-      return { status: "ok", cleared: 0 };
-    }
-    const result = aiRelay.clearDecisionHistory();
-    latestAIStatus = aiRelay.getStatus();
-    return { status: "ok", ...result };
-  });
-
-  // ─── Ollama IPC ────────────────────────────────────────────
-
-  /**
-   * 获取 Ollama 本地模型列表。
-   * 调用 GET /api/tags，5 秒超时，返回模型名数组。
-   */
-  ipcMain.handle("ollama:listModels", async (_event, baseUrl: string) => {
-    try {
-      const url = baseUrl.replace(/\/+$/, "") + "/api/tags";
-      const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!resp.ok) {
-        return { status: "error", message: `Ollama 返回 ${resp.status}` };
-      }
-      const data = await resp.json();
-      const models = Array.isArray(data?.models)
-        ? data.models.map((m: any) => m.name || m.model || String(m))
-        : [];
-      return { status: "ok", models };
-    } catch (err: any) {
-      return { status: "error", message: err?.message || "无法连接 Ollama" };
-    }
-  });
-
-  // ─── OpenCode IPC ─────────────────────────────────────────
-
-  /**
-   * 获取 OpenCode Zen 可用模型列表。
-   * 调用 GET /zen/v1/models，10 秒超时，返回模型 ID 数组。
-   * 用于前端动态刷新模型下拉框。
-   */
-  ipcMain.handle("opencode:listModels", async () => {
-    try {
-      const resp = await fetch("https://opencode.ai/zen/v1/models", {
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!resp.ok) {
-        return { status: "error", message: `OpenCode 返回 ${resp.status}` };
-      }
-      const data = await resp.json();
-      const models: string[] = Array.isArray(data?.data)
-        ? data.data.map((m: any) => String(m.id || ""))
-        : [];
-      return { status: "ok", models };
-    } catch (err: any) {
-      return { status: "error", message: err?.message || "无法连接 OpenCode" };
-    }
-  });
-
-  // ─── 主题 IPC ──────────────────────────────────────────────
-
-  /** 根据配置模式解析实际主题（system → 读取操作系统偏好） */
-  const resolveTheme = (mode: "light" | "dark" | "system"): "light" | "dark" => {
-    if (mode === "system") return nativeTheme.shouldUseDarkColors ? "dark" : "light";
-    return mode;
-  };
-
-  /** 将解析后的主题通知渲染进程 */
-  const notifyThemeChange = (resolved: "light" | "dark"): void => {
-    mainWindow?.webContents.send("theme:changed", resolved);
-  };
-
-  /** 获取当前主题配置和解析结果 */
-  ipcMain.handle("theme:get", async () => {
-    const mode = getConfig().theme || "system";
-    return { mode, resolved: resolveTheme(mode) };
-  });
-
-  /** 设置主题模式并通知渲染进程 */
-  ipcMain.handle("theme:set", async (_event, mode: "light" | "dark" | "system") => {
-    setConfigPath("theme", mode);
-    const resolved = resolveTheme(mode);
-    notifyThemeChange(resolved);
-    return { resolved };
-  });
-
-  /** 监听操作系统主题变化，当配置为 system 时自动切换 */
-  nativeTheme.on("updated", () => {
-    const mode = getConfig().theme || "system";
-    if (mode === "system") {
-      notifyThemeChange(resolveTheme("system"));
-    }
-  });
+  registerConfigIpcHandlers(appContext);
+  registerAuthIpcHandlers(appContext);
+  registerAiIpcHandlers(appContext);
 }
 
 // ─── 应用生命周期 ──────────────────────────────────────────
@@ -920,16 +437,20 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   
   createWindow();
-  ensureTray();
   registerIpcHandlers();
+  // 托盘初始化放在 IPC 注册之后，避免托盘异常影响主流程
+  appShell.ensureTray();
 });
 
 /** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */
 app.on("window-all-closed", async () => {
   await cleanupBeforeExit();
-  // 给一点时间让进程退出
-  await new Promise(r => setTimeout(r, 1000));
-  app.quit();
+  // 若是主动退出流程，直接结束；否则保持历史行为尝试退出应用
+  if (isAppQuitting) {
+    app.exit(0);
+    return;
+  }
+  appShell.requestAppQuit();
 });
 
 /** 退出前清理（防止资源泄露） */

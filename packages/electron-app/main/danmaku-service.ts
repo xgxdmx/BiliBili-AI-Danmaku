@@ -223,13 +223,20 @@ export class DanmakuService extends EventEmitter {
       pythonPath = isWin ? "python" : "python3";
     }
 
+    // 兼容两种打包结构：
+    // 1) danmaku-core/run.exe（历史平铺）
+    // 2) danmaku-core/run/run.exe（当前 onedir 结构）
     const exePath = join(basePath, "run.exe");
+    const exePathNested = join(basePath, "run", "run.exe");
     const binPath = join(basePath, "run");
+    const binPathNested = join(basePath, "run", "run");
     const pyPath = join(basePath, "run.py");
 
     if (!isDevMode) {
       if (isWin && fs.existsSync(exePath)) return { scriptPath: exePath, usePython: false, pythonPath };
+      if (isWin && fs.existsSync(exePathNested)) return { scriptPath: exePathNested, usePython: false, pythonPath };
       if (!isWin && fs.existsSync(binPath)) return { scriptPath: binPath, usePython: false, pythonPath };
+      if (!isWin && fs.existsSync(binPathNested)) return { scriptPath: binPathNested, usePython: false, pythonPath };
       if (fs.existsSync(pyPath)) return { scriptPath: pyPath, usePython: true, pythonPath };
       throw new Error("未找到 danmaku-core 脚本");
     }

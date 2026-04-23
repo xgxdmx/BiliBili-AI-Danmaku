@@ -152,6 +152,8 @@ export interface DanmakuAPI {
   onCloseConfirmRequested: (callback: (data: { requestId: string; message: string; detail: string }) => void) => () => void;
   /** 向主进程回传关闭确认结果 */
   respondCloseConfirm: (payload: { requestId: string; action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
+  /** 关闭确认动作直达通道（不依赖 requestId，作为兜底） */
+  submitCloseConfirmAction: (payload: { action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
 }
 
 const api: DanmakuAPI = {
@@ -233,6 +235,7 @@ const api: DanmakuAPI = {
     return () => ipcRenderer.removeListener("window:closeConfirmRequested", handler);
   },
   respondCloseConfirm: (payload) => ipcRenderer.invoke("window:closeConfirmRespond", payload),
+  submitCloseConfirmAction: (payload) => ipcRenderer.invoke("window:closeConfirmAction", payload),
 };
 
 contextBridge.exposeInMainWorld("danmakuAPI", api);

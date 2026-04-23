@@ -181,14 +181,18 @@ const schema: ConfigSchema = {
 
 // ─── 加密密钥派生 ──────────────────────────────────────────
 
-/** 打包模式下在 Roaming 里使用固定目录名，避免目录名随产品名变化 */
-const ROAMING_CONFIG_DIR_NAME = "BiliBiliDanmuClaw";
+/** 旧版本曾使用的独立配置目录名（与 Electron userData 分离） */
+const LEGACY_ROAMING_CONFIG_DIR_NAME = "BiliBiliDanmuClaw";
 
-/** 获取配置文件目录：打包模式在 AppData\Roaming，开发模式在项目根目录 */
+/**
+ * 获取配置文件目录：
+ * - 打包模式：统一使用 Electron userData 目录（与缓存在同一目录）
+ * - 开发模式：项目根目录
+ */
 function getConfigDir(): string {
   if (app.isPackaged) {
-    // 打包模式：使用 Roaming 下应用专属目录
-    return join(app.getPath("appData"), ROAMING_CONFIG_DIR_NAME);
+    // 关键：配置与缓存共用同一目录，避免额外新建独立配置目录
+    return app.getPath("userData");
   }
   // 开发模式：使用项目根目录
   return join(app.getAppPath(), "../../");
@@ -206,33 +210,42 @@ if (!existsSync(configDir)) {
 }
 
 /**
- * 迁移旧版打包配置路径（exe 同目录）到 Roaming。
- * 仅在目标不存在时复制，避免覆盖用户新配置。
+ * 迁移历史配置到当前 userData 目录。
+ * 迁移来源：
+ *   1) 旧版独立 Roaming 配置目录（BiliBiliDanmuClaw）
+ *   2) 更老版本 exe 同目录
+ * 仅在目标文件不存在时复制，避免覆盖用户现有配置。
  */
-function migratePackagedConfigFromExeDirIfNeeded(): void {
+function migratePackagedConfigToUserDataIfNeeded(): void {
   if (!app.isPackaged) return;
 
-  const oldDir = dirname(app.getPath("exe"));
-  if (!oldDir || oldDir === configDir) return;
+  const userDataDir = configDir;
+  const legacyRoamingDir = join(app.getPath("appData"), LEGACY_ROAMING_CONFIG_DIR_NAME);
+  const legacyExeDir = dirname(app.getPath("exe"));
 
-  const oldConfigPath = join(oldDir, "config.json");
-  const newConfigPath = join(configDir, "config.json");
-  const oldLegacyBakPath = join(oldDir, "config.json.legacy.bak");
-  const newLegacyBakPath = join(configDir, "config.json.legacy.bak");
+  const migrationFiles = ["config.json", "config.json.legacy.bak", "config-export.json"];
 
-  try {
-    if (existsSync(oldConfigPath) && !existsSync(newConfigPath)) {
-      copyFileSync(oldConfigPath, newConfigPath);
+  const copyIfMissing = (fromDir: string): void => {
+    if (!fromDir || fromDir === userDataDir) return;
+    try {
+      for (const name of migrationFiles) {
+        const fromPath = join(fromDir, name);
+        const toPath = join(userDataDir, name);
+        if (existsSync(fromPath) && !existsSync(toPath)) {
+          copyFileSync(fromPath, toPath);
+        }
+      }
+    } catch {
+      // 迁移失败不阻塞启动
     }
-    if (existsSync(oldLegacyBakPath) && !existsSync(newLegacyBakPath)) {
-      copyFileSync(oldLegacyBakPath, newLegacyBakPath);
-    }
-  } catch {
-    // 迁移失败不阻塞启动，继续使用当前目录
-  }
+  };
+
+  // 优先迁移“旧独立配置目录”，其次迁移“exe 同目录”
+  copyIfMissing(legacyRoamingDir);
+  copyIfMissing(legacyExeDir);
 }
 
-migratePackagedConfigFromExeDirIfNeeded();
+migratePackagedConfigToUserDataIfNeeded();
 
 // 开发/打包模式配置目录已就绪
 
@@ -298,6 +311,7 @@ function initializeStore(): Store<ConfigSchema> {
     const snap = snapshot as any;
     migratedStore.set("room", snap.room || schema.room);
     migratedStore.set("credentials", snap.credentials || schema.credentials);
+    migratedStore.set("quickReplyEnabled", snap.quickReplyEnabled ?? snap.quickRepliesEnabled ?? schema.quickReplyEnabled);
     migratedStore.set("keywords", snap.keywords || schema.keywords);
     migratedStore.set("quickRepliesEnabled", snap.quickRepliesEnabled ?? schema.quickRepliesEnabled);
     migratedStore.set("quickReplies", snap.quickReplies || schema.quickReplies);
@@ -460,6 +474,7 @@ function getMachineId(): string {
  * 包含 __meta 元信息（格式版本、导出时间、machineId），
  * 方便用户手动编辑和跨机器迁移。
  * @param targetPath 导出目标路径，不传则使用默认路径
+ * @param options
  * @param options.includeSensitive 是否包含敏感信息（API Key、B站Cookie等），默认 false
  */
 export function exportConfigToFile(
@@ -496,7 +511,7 @@ export function exportConfigToFile(
       },
       room: config.room,
       credentials: exportedCredentials,
-      quickReplyEnabled: config.quickReplyEnabled === true,
+      quickReplyEnabled: config.quickReplyEnabled,
       keywords: config.keywords,
       quickRepliesEnabled: config.quickRepliesEnabled ?? schema.quickRepliesEnabled,
       quickReplies: config.quickReplies,

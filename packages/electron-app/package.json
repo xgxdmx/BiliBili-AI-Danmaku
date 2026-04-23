@@ -1,6 +1,6 @@
 {
   "name": "bilibili-danmu-claw-electron-app",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "BiliBili AI弹幕姬",
   "author": "xgxdmx",
@@ -52,7 +52,6 @@
       "allowToChangeInstallationDirectory": true,
       "include": "build/installer.nsh",
       "installerIcon": null,
-      "include": "build/installer.nsh",
       "shortcutName": "bilibili-danmu-claw"
     },
     "files": [
@@ -65,9 +64,8 @@
         "filter": ["**/*"]
       },
       {
-        "from": "resources",
-        "to": "resources",
-        "filter": ["**/*"]
+        "from": "build/icon.ico",
+        "to": "icon.ico"
       }
     ]
   },

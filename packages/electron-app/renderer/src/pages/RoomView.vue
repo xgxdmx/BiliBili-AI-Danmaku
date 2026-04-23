@@ -298,7 +298,7 @@ async function openPopupLogin() {
         <button class="btn btn-accent" :disabled="isConnecting || !isConfigured || isConnected" @click="handleConnect">
           {{ isConnecting ? "连接中..." : "开始监听" }}
         </button>
-        <button class="btn btn-muted" :disabled="!isConnected" @click="handleDisconnect">停止监听</button>
+        <button class="btn btn-muted stop-listening-btn" :disabled="!isConnected" @click="handleDisconnect">停止监听</button>
       </div>
 
       <div class="field">
