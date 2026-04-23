@@ -429,57 +429,82 @@ danmakuService.on("danmaku", (data) => {
   registerAiIpcHandlers(appContext);
 }
 
-// ─── 应用生命周期 ──────────────────────────────────────────
+// ─── 单实例限制 ────────────────────────────────────────────
+// 必须在 app.whenReady() 之前调用 requestSingleInstanceLock()。
+// 返回 false 表示已有实例在运行，当前进程应立即退出，避免多实例并发导致资源冲突。
 
-/** 应用就绪：隐藏菜单栏 → 创建窗口 → 注册 IPC */
-app.whenReady().then(() => {
-  // 关闭应用菜单栏（去掉"查看"等菜单）
-  Menu.setApplicationMenu(null);
-  
-  createWindow();
-  registerIpcHandlers();
-  // 托盘初始化放在 IPC 注册之后，避免托盘异常影响主流程
-  appShell.ensureTray();
-});
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  // 第二个实例：直接退出，不初始化任何资源
+  app.quit();
+} else {
+  // 已有实例收到第二个实例的启动请求 → 聚焦/恢复主窗口
+  app.on("second-instance", () => {
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) {
+      // 窗口不存在（可能被关到托盘后窗口已销毁），重新创建
+      createWindow();
+      registerIpcHandlers();
+      return;
+    }
+    // 窗口存在：从最小化/隐藏状态恢复并聚焦到前台
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    win.focus();
+  });
 
-/** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */
-app.on("window-all-closed", async () => {
-  await cleanupBeforeExit();
-  // 若是主动退出流程，直接结束；否则保持历史行为尝试退出应用
-  if (isAppQuitting) {
-    app.exit(0);
-    return;
-  }
-  appShell.requestAppQuit();
-});
+  // ─── 应用生命周期 ──────────────────────────────────────────
 
-/** 退出前清理（防止资源泄露） */
-app.on("before-quit", async () => {
-  isAppQuitting = true;
-  await cleanupBeforeExit();
-});
+  /** 应用就绪：隐藏菜单栏 → 创建窗口 → 注册 IPC */
+  app.whenReady().then(() => {
+    // 关闭应用菜单栏（去掉"查看"等菜单）
+    Menu.setApplicationMenu(null);
 
-/** 进程信号处理（Ctrl+C / kill） */
-process.on("SIGINT", () => {
-  isAppQuitting = true;
-  void cleanupBeforeExit().finally(() => process.exit(0));
-});
-
-process.on("SIGTERM", () => {
-  isAppQuitting = true;
-  void cleanupBeforeExit().finally(() => process.exit(0));
-});
-
-/** 未捕获异常 → 记录日志 → 清理 → 非零退出 */
-process.on("uncaughtException", (err) => {
-  console.error("[Main] uncaughtException:", err);
-  isAppQuitting = true;
-  void cleanupBeforeExit().finally(() => process.exit(1));
-});
-
-/** macOS dock 点击事件：无窗口时重新创建 */
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
-  }
-});
+    registerIpcHandlers();
+    // 托盘初始化放在 IPC 注册之后，避免托盘异常影响主流程
+    appShell.ensureTray();
+  });
+
+  /** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */
+  app.on("window-all-closed", async () => {
+    await cleanupBeforeExit();
+    // 若是主动退出流程，直接结束；否则保持历史行为尝试退出应用
+    if (isAppQuitting) {
+      app.exit(0);
+      return;
+    }
+    appShell.requestAppQuit();
+  });
+
+  /** 退出前清理（防止资源泄露） */
+  app.on("before-quit", async () => {
+    isAppQuitting = true;
+    await cleanupBeforeExit();
+  });
+
+  /** 进程信号处理（Ctrl+C / kill） */
+  process.on("SIGINT", () => {
+    isAppQuitting = true;
+    void cleanupBeforeExit().finally(() => process.exit(0));
+  });
+
+  process.on("SIGTERM", () => {
+    isAppQuitting = true;
+    void cleanupBeforeExit().finally(() => process.exit(0));
+  });
+
+  /** 未捕获异常 → 记录日志 → 清理 → 非零退出 */
+  process.on("uncaughtException", (err) => {
+    console.error("[Main] uncaughtException:", err);
+    isAppQuitting = true;
+    void cleanupBeforeExit().finally(() => process.exit(1));
+  });
+
+  /** macOS dock 点击事件：无窗口时重新创建 */
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+}
