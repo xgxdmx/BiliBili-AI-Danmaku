@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
-  <img src="https://img.shields.io/badge/Vue-3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" />
+  <img src="https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" />
   <img src="https://img.shields.io/badge/License-Apache%202.0-yellow?style=flat-square" alt="License" />
 </p>
 
@@ -19,17 +19,23 @@
 
 ## ✨ 功能特性
 
+### 核心功能
 - 🔴 **实时弹幕监听** — 基于 B站 WebSocket 协议，毫秒级接收弹幕、🎁礼物、💎SC
 - 🎯 **关键词/正则匹配** — 支持纯文本、正则两种匹配模式，可配置大小写敏感和匹配范围（固定回复 / AI / 两者皆可）
 - 🤖 **大模型回复** — 对接 OpenAI 兼容 API + 本地 Ollama，支持自定义 Prompt、发送间隔、队列上限、跳过规则
-- ⚡ **固定回复引擎** — 关键词命中后直接发送预设回复，低延迟无需等待 AI
+- ⚡ **固定回复引擎** — 关键词命中后直接发送预设回复，优先级高于 AI，低延迟无等待
 - 🔑 **B站一键登录** — 内置 B站扫码登录弹窗，自动提取 Cookie，无需手动复制
+
+### 配置与管理
 - 🔒 **配置加密持久化** — 凭证本地 AES-256-GCM 加密存储，支持导出/导入（可选择是否包含敏感信息）
-- 📊 **弹幕监控面板** — 实时弹幕流、匹配命中列表、AI 队列状态一目了然
-- 🎨 **主题切换** — 支持亮色/暗色/跟随系统三种主题模式
 - 🔄 **热重载** — 连接中修改配置自动生效，无需断开重连
 - 📋 **模型列表** — OpenCode/Ollama 模型列表自动获取，实时更新
 - 🔧 **per-provider 配置** — 每个模型供应商拥有独立的模型配置，自由切换
+
+### 监控与界面
+- 📊 **弹幕监控面板** — 实时弹幕流、匹配命中列表、AI 队列状态一目了然
+- 🎨 **主题切换** — 支持亮色/暗色/跟随系统三种主题模式
+- ℹ️ **关于页面** — 版本信息、技术栈、开源致谢
 
 ## 🏗️ 架构概览
 
@@ -57,8 +63,26 @@
 1. 🐍 Python 核心通过 WebSocket 连接 B站弹幕服务器，实时接收弹幕
 2. 📡 弹幕数据通过 **stdio JSON-RPC** 传递给 Electron 主进程
 3. 🎯 关键词过滤器对每条弹幕做匹配，按 `scope` 路由到固定回复或 AI
-4. 🤖 AI 回复经发送间隔控制后回传 Python，以弹幕形式发回直播间
-5. 🖥️ GUI 提供可视化配置和实时状态监控
+4. ⚡ 固定回复优先级高于 AI，命中后直接发送，阻止 AI 重复回复
+5. 🤖 AI 回复经发送间隔控制后回传 Python，以弹幕形式发回直播间
+6. 🖥️ GUI 提供可视化配置和实时状态监控
+
+**主进程模块架构：**
+
+| 模块 | 职责 |
+|------|------|
+| `index.ts` | 组合根，初始化并串联所有子模块 |
+| `app-shell.ts` | 窗口创建/关闭、系统托盘、应用生命周期 |
+| `app-context.ts` | 全局运行时上下文（窗口、服务、状态引用） |
+| `auth-window.ts` | B站扫码登录弹窗，自动提取 Cookie |
+| `config-store.ts` | 配置加密读写与持久化 |
+| `config-ipc.ts` | 配置相关的 IPC 通信桥接 |
+| `danmaku-service.ts` | Python 进程管理、JSON-RPC 协议、弹幕收发 |
+| `ai-relay.ts` | AI 模型对接（OpenAI 兼容 API / Ollama） |
+| `ai-ipc.ts` | AI 相关的 IPC 通信桥接 |
+| `quick-reply-engine.ts` | 固定回复引擎，关键词命中后直接发送预设回复 |
+| `runtime-cache.ts` | 运行时临时状态（模型列表缓存等） |
+| `logger.ts` | 统一日志工具 |
 
 ## 📁 项目结构
 
@@ -67,37 +91,46 @@ packages/
 ├── shared/                             # 📦 共享类型定义 (TypeScript)
 │   ├── src/
 │   │   ├── index.ts                    # 📤 统一导出
-│   │   └── types.ts                    # 📋 类型定义
+│   │   └── types.ts                    # 📋 类型定义（弹幕/关键词/JSON-RPC/配置）
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── tsconfig.build.json
 │
 ├── danmaku-core/                       # 🐍 Python 弹幕核心
-│   ├── receiver.py                    # 📥 弹幕接收器
-│   ├── receiver.spec                  # 📦 PyInstaller 配置
-│   ├── sender.py                      # 📤 弹幕发送器
-│   ├── sender.spec                    # 📦 PyInstaller 配置
-│   ├── run.py                         # 🚪 入口
-│   └── requirements.txt               # 📦 依赖
+│   ├── receiver.py                     # 📥 弹幕接收器 (WebSocket)
+│   ├── receiver.spec                   # 📦 PyInstaller 配置
+│   ├── sender.py                       # 📤 弹幕发送器 (HTTP API)
+│   ├── sender.spec                     # 📦 PyInstaller 配置
+│   ├── run.py                          # 🚪 入口 (JSON-RPC over stdio)
+│   └── requirements.txt                # 📦 依赖
 │
-└── electron-app/                      # ⚡ Electron 桌面客户端
-    ├── electron.vite.config.ts        # ⚙️ Vite 配置
-    ├── main/
-    │   ├── index.ts                   # 🏠 主进程
-    │   ├── danmaku-service.ts         # 🔌 弹幕服务
-    │   ├── ai-relay.ts                # 🤖 AI 中继
-    │   ├── quick-reply-engine.ts      # ⚡ 固定回复
-    │   ├── config-store.ts            # 🔐 配置存储
-    │   └── logger.ts                  # 📝 日志
+└── electron-app/                       # ⚡ Electron 桌面客户端
+    ├── electron.vite.config.ts         # ⚙️ Vite 配置
+    ├── build/
+    │   ├── afterPack.js                # 🔨 electron-builder 打包后钩子（图标注入）
+    │   └── installer.nsh               # 📦 NSIS 自定义安装/卸载脚本
+    ├── main/                           # ⚡ 主进程（模块化架构）
+    │   ├── index.ts                    # 🏠 组合根
+    │   ├── app-shell.ts                # 🪟 窗口/托盘/生命周期
+    │   ├── app-context.ts              # 🌐 全局运行时上下文
+    │   ├── auth-window.ts              # 🔑 B站扫码登录
+    │   ├── config-store.ts             # 🔐 配置加密存储
+    │   ├── config-ipc.ts               # 📡 配置 IPC 桥接
+    │   ├── danmaku-service.ts          # 🔌 Python 进程管理 + 弹幕收发
+    │   ├── ai-relay.ts                 # 🤖 AI 模型对接
+    │   ├── ai-ipc.ts                   # 📡 AI IPC 桥接
+    │   ├── quick-reply-engine.ts       # ⚡ 固定回复引擎
+    │   ├── runtime-cache.ts            # 💾 运行时缓存
+    │   └── logger.ts                   # 📝 日志
     ├── preload/
-    │   └── index.ts                   # 🌉 桥接
+    │   └── index.ts                    # 🌉 桥接
     ├── renderer/
     │   ├── index.html
     │   └── src/
-    │       ├── App.vue                 # 🎨 主界面
-    │       ├── main.ts                 # 🚀 启动
-    │       ├── env.d.ts                # 📝 类型声明
-    │       ├── styles/                 # 🎨 样式
+    │       ├── App.vue                  # 🎨 主界面（侧栏导航）
+    │       ├── main.ts                  # 🚀 启动
+    │       ├── env.d.ts                 # 📝 类型声明
+    │       ├── styles/                  # 🎨 样式
     │       │   ├── app.css
     │       │   ├── components.css
     │       │   ├── danmaku.css
@@ -106,15 +139,16 @@ packages/
     │       │   ├── keywords.css
     │       │   └── room.css
     │       └── pages/
-    │           ├── DanmakuView.vue     # 💬 弹幕监控
-    │           ├── RoomView.vue        # 📺 直播间
-    │           ├── KeywordsView.vue    # 🎯 关键词
-    │           ├── ModelSettingsView.vue    # 🤖 AI 配置
-    │           ├── MatchedView.vue            # ✅ 命中记录
-    │           ├── SettingsView.vue           # ⚙️ 设置
-    │           └── DevView.vue                # 🔧 开发
+    │           ├── RoomView.vue         # 📺 直播间配置 + B站登录
+    │           ├── KeywordsView.vue     # 🎯 关键词规则管理
+    │           ├── DanmakuView.vue      # 💬 弹幕实时监控
+    │           ├── MatchedView.vue      # ✅ 匹配命中记录
+    │           ├── ModelSettingsView.vue # 🤖 AI 模型配置
+    │           ├── SettingsView.vue     # ⚙️ 设置（导入/导出/全局开关）
+    │           ├── AboutView.vue        # ℹ️ 关于（版本/主题/技术栈）
+    │           └── DevView.vue          # 🔧 开发调试
     └── resources/
-        └── icon.ico                    # 🖼️ 应用图标
+        └── icon.ico                     # 🖼️ 应用图标（多尺寸）
 ```
 
 ## 🚀 快速开始
@@ -170,7 +204,7 @@ pnpm package:electron
 pnpm package:clean
 ```
 
-> 打包脚本基于 Node.js (`scripts/build.mjs`)，跨平台支持 Windows/macOS/Linux。
+> 打包脚本基于 Node.js (`scripts/build.mjs`)。
 
 ## ⚙️ 配置说明
 
@@ -183,10 +217,11 @@ pnpm package:clean
 3. 填写直播间房间号，点击「▶️ 开始监听」
 4. 在「🎯 关键词」页面添加匹配规则
 5. 在「🤖 大模型」页面配置 API 和 Prompt
+6. 在「⚙️ 设置」页面开启全局开关（固定回复/AI 回复需全局开关开启后才生效）
 
 ### 📂 方式二：配置导入
 
-支持在 GUI 中导入/导出 JSON 配置文件，方便在多台机器间同步。
+支持在 GUI 中导入/导出 JSON 配置文件，方便在多台机器间同步。导出时可选择是否包含敏感信息。
 
 配置结构示例：
 
@@ -263,26 +298,30 @@ pnpm package:clean
 | `reply` | 💬 命中后发送的回复文本 |
 | `cooldownMs` | ⏱️ 冷却时间 (ms)，防止刷屏 |
 
+> ⚡ 固定回复优先级始终高于 AI。当弹幕命中固定回复规则时，AI 不会对该弹幕回复。
+
 ## 🧰 技术栈
 
 | 层 | 技术 |
 |---|------|
-| 🐍 弹幕核心 | Python 3 + [blivedm](https://github.com/xfgryujk/blivedm) + aiohttp |
+| 🐍 弹幕核心 | Python 3.13 + [blivedm](https://github.com/xfgryujk/blivedm) + aiohttp |
 | 🔗 进程通信 | JSON-RPC 2.0 over stdio |
 | 🤖 AI 对接 | TypeScript (OpenAI 兼容 API) |
-| ⚡ 桌面客户端 | Electron 41 + Vue 3 + Vite |
+| ⚡ 桌面客户端 | Electron 41 + Vue 3 + Vite 6 |
 | 🔄 状态管理 | Vue 3 Composition API (provide/inject) |
 | 🔒 配置持久化 | electron-store (AES-256-GCM 加密) |
 | 📦 类型共享 | TypeScript project references |
 | 🔨 构建 | electron-vite + electron-builder + PyInstaller |
+| 📦 安装包 | NSIS (自定义安装/卸载/图标/中文界面) |
 
 ## 📅 更新日志
 
 | 版本 | 日期 | 主要改动 |
-|:------:|:--------:|----------|
+|:------:|:--------:|---------|
+| **v0.3.0** | 2025-04 | 主进程模块化重构（12 个专职模块）• 固定回复优先级修复（高于 AI、全局开关同步）• 停止监听按钮交互增强 • 单实例限制防止重复启动 • NSIS 安装包完善（可选安装路径、安装后启动、完整卸载含配置保留选项）• 自定义应用图标（多尺寸 ICO + rcedit 注入）• 关于页面（版本/主题/技术栈） |
 | **v0.2.0** | 2025-04 | OpenCode 模型列表自动获取、启动时实时拉取可用模型 • 新增亮色/暗色/跟随系统三种主题模式 • 导出配置可选择是否包含敏感信息 • 每个模型供应商独立配置、连接中自动热重载 • 菜单栏间距优化 |
 | **v0.1.2** | 2025-04 | Ollama 模型参数自定义（温度/Top P/Max Token/Keep-Alive/超时）• 自动识别 Ollama 模型列表 • 修复 Thinking 过程误识别问题 • 优化弹幕回复提取逻辑、减少 NO_REPLY |
-| **v0.1.1** | 2025-02 | 修复打包异常 • 增加跨平台打包支持 |
+| **v0.1.1** | 2025-02 | 修复打包异常  |
 | **v0.1.0** | 2025-01 | 初始版本：B站弹幕监听+关键词匹配 • AI 自动回复（OpenCode/Ollama 双供应商）• B站扫码登录 • 配置加密存储 |
 
 ## ⚠️ 安全提醒
