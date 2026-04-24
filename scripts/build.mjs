@@ -350,17 +350,13 @@ function patchDeployPackage() {
   const nsis = build.nsis || {};
 
   if (isWin) {
-    nsis.runAfterFinish = false;
+    // 源 package.json 已设置 runAfterFinish: true，此处不再覆盖。
     nsis.warningsAsErrors = true;
   }
 
   build.nsis = nsis;
   pkg.build = build;
   writeJson(deployPkgPath, pkg);
-
-  if (isWin) {
-    logOk("Patched Windows NSIS config: runAfterFinish=false");
-  }
 }
 
 /**
@@ -389,7 +385,7 @@ function verifyPackagedRuntime() {
  * - 整理最终产物
  * - Windows 下做打包后 runtime 校验
  */
-function buildElectron() {
+async function buildElectron() {
   logStep(`Electron: prepare package (${getPlatformLabel()})`);
   verifyRuntimeStaged();
 

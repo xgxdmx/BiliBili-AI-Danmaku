@@ -53,8 +53,8 @@ const entriesToCopy = [
   "tsconfig.json",
 ];
 
-// 这些目录是运行应用与打包所需的最小集合。
-const dirsToCopy = ["main", "preload", "renderer", "out", "build"];
+// resources 目录包含应用图标，打包时需要一并复制
+const dirsToCopy = ["main", "preload", "renderer", "out", "build", "resources"];
 
 for (const entry of entriesToCopy) {
   const src = path.join(electronAppDir, entry);

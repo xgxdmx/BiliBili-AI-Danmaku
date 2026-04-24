@@ -50,10 +50,13 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
       "include": "build/installer.nsh",
-      "installerIcon": null,
-      "shortcutName": "bilibili-danmu-claw"
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "shortcutName": "BiliBili AI弹幕姬"
     },
+    "afterPack": "build/afterPack.js",
     "files": [
       "out/**/*"
     ],
