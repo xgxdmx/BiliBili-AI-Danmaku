@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['packages/danmaku-core/run.py'],
+    ['packages/danmaku-core/danmaku.py'],
     pathex=['packages/danmaku-core'],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='run',
+    name='danmaku',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -43,5 +43,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='run',
+    name='danmaku',
 )

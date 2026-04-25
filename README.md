@@ -105,7 +105,7 @@ packages/
 │   ├── receiver.spec                   # 📦 PyInstaller 配置
 │   ├── sender.py                       # 📤 弹幕发送器 (HTTP API)
 │   ├── sender.spec                     # 📦 PyInstaller 配置
-│   ├── run.py                          # 🚪 入口 (JSON-RPC over stdio)
+│   ├── danmaku.py                      # 🚪 入口 (JSON-RPC over stdio)
 │   └── requirements.txt                # 📦 依赖
 │
 └── electron-app/                       # ⚡ Electron 桌面客户端

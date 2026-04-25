@@ -200,7 +200,7 @@ const navItems = [
   { path: "/room", label: "直播间", icon: "tv" },
   { path: "/keywords", label: "关键词匹配", icon: "tag" },
   { path: "/models", label: "大模型配置", icon: "ai" },
-  { path: "/dev", label: "配置", icon: "settings" },
+  { path: "/dev", label: "配置文件管理", icon: "settings" },
   { path: "/about", label: "关于", icon: "about" },
 ];
 

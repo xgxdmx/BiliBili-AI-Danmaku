@@ -2,20 +2,20 @@
 Bilibili Danmaku Entry Point - 单文件入口
 自动根据参数决定运行 receiver 还是 sender
 用法:
-  python run.py receiver    # 运行弹幕接收
-  python run.py sender     # 运行弹幕发送
-  python run.py send     # 发送单条弹幕 (需要额外参数)
+  python danmaku.py receiver    # 运行弹幕接收
+  python danmaku.py sender      # 运行弹幕发送
+  python danmaku.py send        # 发送单条弹幕 (需要额外参数)
 """
 import sys
 import asyncio
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python run.py [receiver|sender|send]")
+        print("Usage: python danmaku.py [receiver|sender|send]")
         sys.exit(1)
-    
+
     mode = sys.argv[1].lower()
-    
+
     if mode == "receiver":
         from receiver import main as receiver_main
         asyncio.run(receiver_main())

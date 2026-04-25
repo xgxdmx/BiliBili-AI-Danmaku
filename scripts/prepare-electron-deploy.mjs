@@ -18,8 +18,8 @@ const deployDir = path.join(electronAppDir, ".deploy");
 const danmakuCoreRuntimeDir = path.join(repoRoot, "packages", "danmaku-core", "runtime");
 const configJsonPath = path.join(electronAppDir, "out", "config.json");
 const runtimeExecutablePath = process.platform === "win32"
-  ? path.join(danmakuCoreRuntimeDir, "run", "run.exe")
-  : path.join(danmakuCoreRuntimeDir, "run", "run");
+  ? path.join(danmakuCoreRuntimeDir, "danmaku", "danmaku.exe")
+  : path.join(danmakuCoreRuntimeDir, "danmaku", "danmaku");
 
 function assertRuntimeExecutable(targetPath, label) {
   if (existsSync(targetPath)) return;

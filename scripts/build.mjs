@@ -5,7 +5,7 @@
  *
  * 构建总流程：
  * 1) 用 PyInstaller 构建 Python runtime（onedir）。
- * 2) 将 runtime 暂存到 packages/danmaku-core/runtime/run。
+ * 2) 将 runtime 暂存到 packages/danmaku-core/runtime/danmaku。
  * 3) 构建 Electron 应用并准备 .deploy 项目。
  * 4) 在部署目录中补丁 Windows 的 NSIS 配置。
  * 5) 调用 electron-builder 打包。
@@ -29,7 +29,7 @@ const SHARED = path.join(ROOT, "packages", "shared");
 const PY_DIST_ROOT = path.join(ROOT, ".build", "python-dist");
 const PY_WORK_ROOT = path.join(ROOT, ".build", "python-work");
 const RUNTIME_ROOT = path.join(DANMAKU_CORE, "runtime");
-const RUNTIME_RUN_DIR = path.join(RUNTIME_ROOT, "run");
+const RUNTIME_DANMAKU_DIR = path.join(RUNTIME_ROOT, "danmaku");
 
 const isWin = process.platform === "win32";
 const CYAN = "\x1b[36m";
@@ -203,7 +203,7 @@ function clean() {
     removeIfExists(dir);
   }
 
-  for (const legacyName of ["run.exe", "receiver.exe", "sender.exe", "run", "receiver", "sender"]) {
+  for (const legacyName of ["danmaku.exe", "run.exe", "receiver.exe", "sender.exe", "danmaku", "run", "receiver", "sender"]) {
     removeIfExists(path.join(DANMAKU_CORE, legacyName));
   }
 
@@ -234,7 +234,7 @@ function installPythonDeps(python) {
 
 /**
  * 将 Python runtime 构建为 PyInstaller onedir 产物，
- * 并暂存到 packages/danmaku-core/runtime/run 供 Electron extraResources 打包。
+ * 并暂存到 packages/danmaku-core/runtime/danmaku 供 Electron extraResources 打包。
  */
 function buildPython() {
   logStep("Python: find interpreter");
@@ -253,15 +253,15 @@ function buildPython() {
   removeIfExists(PY_DIST_ROOT);
   removeIfExists(PY_WORK_ROOT);
   removeIfExists(RUNTIME_ROOT);
-  for (const legacyName of ["run.exe", "receiver.exe", "sender.exe", "run", "receiver", "sender"]) {
+  for (const legacyName of ["danmaku.exe", "run.exe", "receiver.exe", "sender.exe", "danmaku", "run", "receiver", "sender"]) {
     removeIfExists(path.join(DANMAKU_CORE, legacyName));
   }
   ensureDir(PY_DIST_ROOT);
   ensureDir(PY_WORK_ROOT);
   ensureDir(RUNTIME_ROOT);
 
-  const specPath = path.join(ROOT, "run.spec");
-  requirePath(specPath, "run.spec");
+  const specPath = path.join(ROOT, "danmaku.spec");
+  requirePath(specPath, "danmaku.spec");
 
   run(python, [
     "-m",
@@ -275,23 +275,23 @@ function buildPython() {
     PY_WORK_ROOT,
   ]);
 
-  const builtRuntimeDir = path.join(PY_DIST_ROOT, "run");
-  const runtimeExe = path.join(builtRuntimeDir, isWin ? "run.exe" : "run");
+  const builtRuntimeDir = path.join(PY_DIST_ROOT, "danmaku");
+  const runtimeExe = path.join(builtRuntimeDir, isWin ? "danmaku.exe" : "danmaku");
   requirePath(runtimeExe, "Python runtime executable");
   smokeTestRuntime(runtimeExe, "Built Python runtime");
 
-  cpSync(builtRuntimeDir, RUNTIME_RUN_DIR, { recursive: true });
-  requirePath(path.join(RUNTIME_RUN_DIR, isWin ? "run.exe" : "run"), "Staged Python runtime");
+  cpSync(builtRuntimeDir, RUNTIME_DANMAKU_DIR, { recursive: true });
+  requirePath(path.join(RUNTIME_DANMAKU_DIR, isWin ? "danmaku.exe" : "danmaku"), "Staged Python runtime");
 
-  logOk(`Staged runtime: ${RUNTIME_RUN_DIR}`);
+  logOk(`Staged runtime: ${RUNTIME_DANMAKU_DIR}`);
 }
 
 /**
  * 在 Electron 打包前校验 runtime 已正确暂存。
  */
 function verifyRuntimeStaged() {
-  const runtimeExe = path.join(RUNTIME_RUN_DIR, isWin ? "run.exe" : "run");
-  requirePath(RUNTIME_RUN_DIR, "Runtime directory");
+  const runtimeExe = path.join(RUNTIME_DANMAKU_DIR, isWin ? "danmaku.exe" : "danmaku");
+  requirePath(RUNTIME_DANMAKU_DIR, "Runtime directory");
   requirePath(runtimeExe, "Runtime executable");
 }
 
@@ -319,7 +319,7 @@ function smokeTestRuntime(runtimeExe, label) {
     const stdout = error.stdout?.toString?.("utf8") ?? "";
     const stderr = error.stderr?.toString?.("utf8") ?? "";
     const combined = `${stdout}\n${stderr}`.trim();
-    const accepted = combined.includes("Usage: python run.py") || combined.includes("Unknown mode");
+    const accepted = combined.includes("Usage: python danmaku.py") || combined.includes("Unknown mode");
 
     if (accepted) {
       const preview = combined.split("\n").slice(0, 2).join(" | ");
@@ -367,7 +367,7 @@ function verifyPackagedRuntime() {
   logStep(`Electron: verify packaged runtime (${getPlatformLabel()})`);
 
   if (isWin) {
-    const packagedRuntimeExe = path.join(ROOT, "dist", "win-unpacked", "resources", "danmaku-core", "run", "run.exe");
+    const packagedRuntimeExe = path.join(ROOT, "dist", "win-unpacked", "resources", "danmaku-core", "danmaku", "danmaku.exe");
     requirePath(packagedRuntimeExe, "Packaged Windows runtime");
     smokeTestRuntime(packagedRuntimeExe, "Packaged Windows runtime");
     return;
@@ -444,7 +444,7 @@ switch (arg) {
     buildPython();
     buildElectron();
     logStep("All done");
-    console.log(`  ${GREEN}Runtime:${RESET}   ${RUNTIME_RUN_DIR}`);
+    console.log(`  ${GREEN}Runtime:${RESET}   ${RUNTIME_DANMAKU_DIR}`);
     console.log(`  ${GREEN}Installer:${RESET} dist/`);
     break;
 }

@@ -6,7 +6,7 @@
 import { EventEmitter } from "events";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
-import { join, dirname } from "path";
+import { join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 import * as fs from "fs";
 import { app as electronApp } from "electron";
@@ -15,13 +15,14 @@ import { logger } from "./logger";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-/** Windows: 仅结束“可执行路径完全匹配”的 run.exe 进程。 */
-function killRunExeByExactPathSync(executablePath: string): void {
+/** Windows: 仅结束“可执行路径完全匹配”的 danmaku.exe/run.exe 进程。 */
+function killBundledExeByExactPathSync(executablePath: string): void {
   const escapedPath = executablePath.replace(/'/g, "''");
+  const exeName = basename(executablePath).replace(/'/g, "''");
   const script = [
     `$target = [System.IO.Path]::GetFullPath('${escapedPath}')`,
     "$targetLower = $target.ToLowerInvariant()",
-    "Get-CimInstance Win32_Process -Filter \"Name = 'run.exe'\" |",
+    `Get-CimInstance Win32_Process -Filter \"Name = '${exeName}'\" |`,
     "  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath).ToLowerInvariant() -eq $targetLower) } |",
     "  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
   ].join(" ");
@@ -37,15 +38,16 @@ function killRunExeByExactPathSync(executablePath: string): void {
 }
 
 /**
- * Windows: 返回“可执行路径完全匹配”的 run.exe 进程数量。
+ * Windows: 返回“可执行路径完全匹配”的 danmaku.exe/run.exe 进程数量。
  * 返回 null 表示查询失败。
  */
-function countRunExeByExactPathSync(executablePath: string): number | null {
+function countBundledExeByExactPathSync(executablePath: string): number | null {
   const escapedPath = executablePath.replace(/'/g, "''");
+  const exeName = basename(executablePath).replace(/'/g, "''");
   const script = [
     `$target = [System.IO.Path]::GetFullPath('${escapedPath}')`,
     "$targetLower = $target.ToLowerInvariant()",
-    "$matches = Get-CimInstance Win32_Process -Filter \"Name = 'run.exe'\" |",
+    `$matches = Get-CimInstance Win32_Process -Filter \"Name = '${exeName}'\" |`,
     "  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath).ToLowerInvariant() -eq $targetLower) }",
     "@($matches).Count",
   ].join(" ");
@@ -66,7 +68,7 @@ function countRunExeByExactPathSync(executablePath: string): number | null {
 }
 
 /**
- * 兜底清理：按当前打包资源路径定位 run.exe 并清理残留。
+ * 兜底清理：按当前打包资源路径定位 danmaku.exe/run.exe 并清理残留。
  * 用于退出流程 race 导致 DanmakuService 实例状态丢失时的额外保险。
  */
 export function cleanupBundledRunExeResidualsSync(): void {
@@ -77,14 +79,24 @@ export function cleanupBundledRunExeResidualsSync(): void {
   try {
     const resourcesPath = process.resourcesPath || electronApp.getAppPath();
     const basePath = join(resourcesPath, "danmaku-core");
+    const danmakuExe = join(basePath, "danmaku.exe");
+    const danmakuExeNested = join(basePath, "danmaku", "danmaku.exe");
     const runExe = join(basePath, "run.exe");
     const runExeNested = join(basePath, "run", "run.exe");
-    if (fs.existsSync(runExe)) {
-      killRunExeByExactPathSync(runExe);
+    if (fs.existsSync(danmakuExe)) {
+      killBundledExeByExactPathSync(danmakuExe);
+      return;
+    }
+    if (fs.existsSync(danmakuExeNested)) {
+      killBundledExeByExactPathSync(danmakuExeNested);
       return;
     }
     if (fs.existsSync(runExeNested)) {
-      killRunExeByExactPathSync(runExeNested);
+      killBundledExeByExactPathSync(runExeNested);
+      return;
+    }
+    if (fs.existsSync(runExe)) {
+      killBundledExeByExactPathSync(runExe);
     }
   } catch {
     // 不阻断退出流程
@@ -92,7 +104,7 @@ export function cleanupBundledRunExeResidualsSync(): void {
 }
 
 /**
- * 退出清理后的残留自检：延迟 waitMs 后检查 run.exe 是否仍残留，并写日志。
+ * 退出清理后的残留自检：延迟 waitMs 后检查 danmaku.exe/run.exe 是否仍残留，并写日志。
  */
 export async function verifyBundledRunExeResidualsAfterCleanup(waitMs = 1200): Promise<void> {
   if (process.platform !== "win32") return;
@@ -102,25 +114,30 @@ export async function verifyBundledRunExeResidualsAfterCleanup(waitMs = 1200): P
   try {
     const resourcesPath = process.resourcesPath || electronApp.getAppPath();
     const basePath = join(resourcesPath, "danmaku-core");
-    const candidates = [join(basePath, "run.exe"), join(basePath, "run", "run.exe")].filter((p) => fs.existsSync(p));
+    const candidates = [
+      join(basePath, "danmaku.exe"),
+      join(basePath, "danmaku", "danmaku.exe"),
+      join(basePath, "run.exe"),
+      join(basePath, "run", "run.exe"),
+    ].filter((p) => fs.existsSync(p));
     if (candidates.length === 0) return;
 
     await new Promise((resolve) => setTimeout(resolve, waitMs));
 
     for (const runPath of candidates) {
-      const count = countRunExeByExactPathSync(runPath);
+      const count = countBundledExeByExactPathSync(runPath);
       if (count === null) {
-        logger.warn("[ExitCheck] run.exe residual check unavailable", { runPath, waitMs });
+        logger.warn("[ExitCheck] runtime residual check unavailable", { runPath, waitMs });
         continue;
       }
       if (count > 0) {
-        logger.warn("[ExitCheck] run.exe residual detected", { runPath, residualCount: count, waitMs });
+        logger.warn("[ExitCheck] runtime residual detected", { runPath, residualCount: count, waitMs });
       } else {
-        logger.log("[ExitCheck] run.exe residual check passed", { runPath, waitMs });
+        logger.log("[ExitCheck] runtime residual check passed", { runPath, waitMs });
       }
     }
   } catch (e) {
-    logger.warn("[ExitCheck] run.exe residual check failed", { error: String(e), waitMs });
+    logger.warn("[ExitCheck] runtime residual check failed", { error: String(e), waitMs });
   }
 }
 
@@ -247,8 +264,8 @@ interface DanmakuServiceConfig {
 
 export class DanmakuService extends EventEmitter {
   private process: ChildProcess | null = null;
-  /** 记录当前采用可执行文件模式时的 run.exe 绝对路径（仅 Windows 打包态使用） */
-  private launchedRunExePath: string | null = null;
+  /** 记录当前采用可执行文件模式时的 runtime 可执行文件绝对路径（仅 Windows 打包态使用） */
+  private launchedRuntimeExePath: string | null = null;
   private keywordFilter = new KeywordFilter();
   private config: DanmakuServiceConfig | null = null;
   private pendingRequests: Map<string, {
@@ -280,7 +297,7 @@ export class DanmakuService extends EventEmitter {
    */
   async start(config: DanmakuServiceConfig): Promise<void> {
     return this.enqueueLifecycle(async () => {
-      // 若已有活跃子进程，先完整停止，避免 run.exe 叠加
+      // 若已有活跃子进程，先完整停止，避免 runtime 叠加
       if (this.isProcessAlive(this.process) || this._connected) {
         logger.log("DanmakuService.start detected existing process, stopping previous instance first");
         await this.stopInternal();
@@ -292,14 +309,14 @@ export class DanmakuService extends EventEmitter {
 
       const { scriptPath, usePython, pythonPath } = this.resolveScriptPaths();
 
-      // Windows 打包态下，先按 run.exe 绝对路径清理历史残留，避免“断开后遗留孤儿进程”继续叠加。
-      // 仅在 run.exe 可执行模式启用，开发态 python run.py 不做该清理。
-      this.cleanupStaleBundledRunExeIfNeeded(scriptPath, usePython);
+      // Windows 打包态下，先按 runtime 可执行文件绝对路径清理历史残留，避免“断开后遗留孤儿进程”继续叠加。
+      // 仅在打包可执行模式启用，开发态 python danmaku.py 不做该清理。
+      this.cleanupStaleBundledRuntimeExeIfNeeded(scriptPath, usePython);
 
       logger.log("Spawning:", usePython ? pythonPath : scriptPath, "script:", scriptPath);
       const spawned = this.spawnProcess(scriptPath, usePython, pythonPath);
       this.process = spawned;
-      this.launchedRunExePath = process.platform === "win32" && !usePython ? scriptPath : null;
+      this.launchedRuntimeExePath = process.platform === "win32" && !usePython ? scriptPath : null;
       this.bindProcessEvents(spawned);
 
       try {
@@ -336,23 +353,36 @@ export class DanmakuService extends EventEmitter {
       pythonPath = isWin ? "python" : "python3";
     }
 
-    // 兼容两种打包结构：
-    // 1) danmaku-core/run.exe（历史平铺）
-    // 2) danmaku-core/run/run.exe（当前 onedir 结构）
-    const exePath = join(basePath, "run.exe");
-    const exePathNested = join(basePath, "run", "run.exe");
-    const binPath = join(basePath, "run");
-    const binPathNested = join(basePath, "run", "run");
-    const pyPath = join(basePath, "run.py");
+    // 兼容三种结构：
+    // 1) danmaku-core/danmaku.exe（平铺）
+    // 2) danmaku-core/danmaku/danmaku.exe（当前 onedir）
+    // 3) 历史 run 结构（用于升级兼容）
+    const exePath = join(basePath, "danmaku.exe");
+    const exePathNested = join(basePath, "danmaku", "danmaku.exe");
+    const binPath = join(basePath, "danmaku");
+    const binPathNested = join(basePath, "danmaku", "danmaku");
+    const legacyExePath = join(basePath, "run.exe");
+    const legacyExePathNested = join(basePath, "run", "run.exe");
+    const legacyBinPath = join(basePath, "run");
+    const legacyBinPathNested = join(basePath, "run", "run");
+    const pyPath = join(basePath, "danmaku.py");
+    const legacyPyPath = join(basePath, "run.py");
 
     if (!isDevMode) {
       if (isWin && fs.existsSync(exePath)) return { scriptPath: exePath, usePython: false, pythonPath };
       if (isWin && fs.existsSync(exePathNested)) return { scriptPath: exePathNested, usePython: false, pythonPath };
       if (!isWin && fs.existsSync(binPath)) return { scriptPath: binPath, usePython: false, pythonPath };
       if (!isWin && fs.existsSync(binPathNested)) return { scriptPath: binPathNested, usePython: false, pythonPath };
+      if (isWin && fs.existsSync(legacyExePath)) return { scriptPath: legacyExePath, usePython: false, pythonPath };
+      if (isWin && fs.existsSync(legacyExePathNested)) return { scriptPath: legacyExePathNested, usePython: false, pythonPath };
+      if (!isWin && fs.existsSync(legacyBinPath)) return { scriptPath: legacyBinPath, usePython: false, pythonPath };
+      if (!isWin && fs.existsSync(legacyBinPathNested)) return { scriptPath: legacyBinPathNested, usePython: false, pythonPath };
       if (fs.existsSync(pyPath)) return { scriptPath: pyPath, usePython: true, pythonPath };
+      if (fs.existsSync(legacyPyPath)) return { scriptPath: legacyPyPath, usePython: true, pythonPath };
       throw new Error("未找到 danmaku-core 脚本");
     }
+    if (fs.existsSync(pyPath)) return { scriptPath: pyPath, usePython: true, pythonPath };
+    if (fs.existsSync(legacyPyPath)) return { scriptPath: legacyPyPath, usePython: true, pythonPath };
     return { scriptPath: pyPath, usePython: true, pythonPath };
   }
 
@@ -458,35 +488,35 @@ export class DanmakuService extends EventEmitter {
     if (process.platform === "win32" && pid) {
       this.killProcessTreeByPid(pid);
 
-      // 若是 run.exe 打包模式，再按绝对路径清理一次同名残留，避免 PID 失联的孤儿进程残存。
-      if (this.launchedRunExePath) {
-        this.killRunExeByExactPath(this.launchedRunExePath);
+      // 若是打包可执行模式，再按绝对路径清理一次同名残留，避免 PID 失联的孤儿进程残存。
+      if (this.launchedRuntimeExePath) {
+        this.killBundledExeByExactPath(this.launchedRuntimeExePath);
       }
     }
     
     this.process = null;
-    this.launchedRunExePath = null;
+    this.launchedRuntimeExePath = null;
     this.pendingRequests.clear();
   }
 
   /**
-   * Windows 打包态：启动前清理历史 run.exe 残留（按绝对路径匹配），避免多实例叠加。
-   * 只清理当前应用打包出来的 danmaku-core/run.exe，不影响系统其他同名进程。
+   * Windows 打包态：启动前清理历史 runtime 残留（按绝对路径匹配），避免多实例叠加。
+   * 只清理当前应用打包出来的 danmaku-core/danmaku.exe（及历史 run.exe），不影响系统其他同名进程。
    */
-  private cleanupStaleBundledRunExeIfNeeded(scriptPath: string, usePython: boolean): void {
+  private cleanupStaleBundledRuntimeExeIfNeeded(scriptPath: string, usePython: boolean): void {
     if (process.platform !== "win32") return;
     if (usePython) return;
     const normalizedName = scriptPath.replace(/\\/g, "/").toLowerCase();
-    if (!normalizedName.endsWith("/run.exe")) return;
-    this.killRunExeByExactPath(scriptPath);
+    if (!normalizedName.endsWith("/danmaku.exe") && !normalizedName.endsWith("/run.exe")) return;
+    this.killBundledExeByExactPath(scriptPath);
   }
 
   /**
-   * Windows: 仅结束“可执行路径完全匹配”的 run.exe 进程。
-   * 采用 CIM 查询 + Stop-Process，避免 taskkill /IM run.exe 误杀其他软件。
+   * Windows: 仅结束“可执行路径完全匹配”的 runtime 进程。
+   * 采用 CIM 查询 + Stop-Process，避免 taskkill /IM * 误杀其他软件。
    */
-  private killRunExeByExactPath(executablePath: string): void {
-    killRunExeByExactPathSync(executablePath);
+  private killBundledExeByExactPath(executablePath: string): void {
+    killBundledExeByExactPathSync(executablePath);
   }
 
   /** Windows: 按 PID 强制结束整个进程树（含子进程） */
@@ -675,7 +705,7 @@ this._connected = true;
     if (process.platform === "win32") {
       const pid = proc.pid;
       if (pid) {
-        // 优先按 PID 结束整个进程树，避免 run.exe 子进程残留
+        // 优先按 PID 结束整个进程树，避免 runtime 子进程残留
         this.killProcessTreeByPid(pid);
         try {
           process.kill(pid);
