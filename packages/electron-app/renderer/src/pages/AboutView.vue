@@ -4,7 +4,7 @@ import { ref, onMounted } from "vue";
 // ─── 应用信息 ─────────────────────────────────────────────────────
 const APP_INFO = {
   name: "BiliBili AI弹幕姬",
-  version: __APP_VERSION__ || "0.2.0",
+  version: __APP_VERSION__ || "0.3.1",
   author: "星光下的梦想",
   description: "B站直播间弹幕监听 + AI 自动回复",
   license: "Apache-2.0",

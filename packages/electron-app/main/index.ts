@@ -246,6 +246,7 @@ function createWindow(): void {
   });
 
   // 标题栏“最小化”按钮：直接最小化到托盘后台运行（若托盘可用）。
+  // @ts-ignore
   mainWindow.on("minimize", (event) => {
     if (isAppQuitting) return;
     if (!appTray) return; // 托盘初始化失败时保持系统默认最小化行为
