@@ -39,6 +39,24 @@ const themeOptions: { value: ThemeMode; label: string; desc: string }[] = [
   { value: "system", label: "💻 跟随系统", desc: "自动匹配系统主题" },
 ];
 
+// ─── 关闭按钮行为设置 ──────────────────────────────────────────
+type CloseWindowBehavior = "ask" | "tray" | "exit";
+const closeWindowBehavior = ref<CloseWindowBehavior>("ask");
+
+const closeBehaviorOptions: { value: CloseWindowBehavior; label: string; desc: string }[] = [
+  { value: "ask", label: "❓ 每次询问", desc: "关闭时弹出确认框" },
+  { value: "tray", label: "📦 最小化到托盘", desc: "后台继续运行" },
+  { value: "exit", label: "🚪 直接退出", desc: "立即关闭程序" },
+];
+
+/** 设置关闭按钮行为，通过 config:set 持久化 */
+async function setCloseWindowBehavior(mode: CloseWindowBehavior) {
+  closeWindowBehavior.value = mode;
+  try {
+    await window.danmakuAPI?.setConfig("closeWindowBehavior", mode);
+  } catch { /* 忽略 */ }
+}
+
 // ─── 版本更新检查 ───────────────────────────────────────────────
 type UpdateStatus = "idle" | "checking" | "up-to-date" | "has-update" | "error";
 const updateStatus = ref<UpdateStatus>("idle");
@@ -85,6 +103,13 @@ onMounted(async () => {
   try {
     const result = await window.danmakuAPI?.getTheme();
     if (result) themeMode.value = result.mode;
+  } catch { /* 忽略 */ }
+  // 加载关闭按钮行为配置
+  try {
+    const config = await window.danmakuAPI?.getConfig();
+    if (config?.closeWindowBehavior) {
+      closeWindowBehavior.value = config.closeWindowBehavior;
+    }
   } catch { /* 忽略 */ }
   // 启动时自动检查更新
   checkUpdate();
@@ -163,6 +188,22 @@ async function setTheme(mode: ThemeMode) {
           :key="opt.value"
           :class="['theme-option', { active: themeMode === opt.value }]"
           @click="setTheme(opt.value)"
+        >
+          <span class="theme-label">{{ opt.label }}</span>
+          <span class="theme-desc">{{ opt.desc }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 关闭按钮行为 -->
+    <div class="section">
+      <h3 class="section-title">关闭按钮行为</h3>
+      <div class="theme-options">
+        <button
+          v-for="opt in closeBehaviorOptions"
+          :key="opt.value"
+          :class="['theme-option', { active: closeWindowBehavior === opt.value }]"
+          @click="setCloseWindowBehavior(opt.value)"
         >
           <span class="theme-label">{{ opt.label }}</span>
           <span class="theme-desc">{{ opt.desc }}</span>
