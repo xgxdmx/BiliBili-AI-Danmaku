@@ -217,7 +217,7 @@ function clean() {
 function installPythonDeps(python) {
   logStep("Python: check dependencies");
 
-  const requirements = ["blivedm", "aiohttp", "brotli", "pyinstaller"];
+  const requirements = ["blivedm==1.1.5", "aiohttp", "brotli", "pyinstaller"];
   const missing = requirements.filter((pkg) => !pipPackageExists(python, pkg));
   if (missing.length === 0) {
     logOk("All Python dependencies already installed");

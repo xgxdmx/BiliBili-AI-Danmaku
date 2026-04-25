@@ -10,6 +10,7 @@ concurrency:
 
 env:
   CI: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-windows:
@@ -47,6 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r packages/danmaku-core/requirements.txt
           pip install pyinstaller
+          pip show blivedm
 
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile
