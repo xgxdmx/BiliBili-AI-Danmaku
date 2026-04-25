@@ -8,7 +8,7 @@
 //   4. 进程退出清理（SIGINT / SIGTERM / window-all-closed）
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, Menu, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, Tray, shell } from "electron";
 import { join } from "path";
 import {
   DanmakuService,
@@ -482,6 +482,57 @@ danmakuService.on("danmaku", (data) => {
   registerConfigIpcHandlers(appContext);
   registerAuthIpcHandlers(appContext);
   registerAiIpcHandlers(appContext);
+
+  // ─── 版本更新检查 IPC ──────────────────────────────────────
+  ipcMain.handle("app:checkUpdate", async () => {
+    try {
+      const currentVersion = app.getVersion();
+      const resp = await fetch("https://api.github.com/repos/xgxdmx/BiliBili-AI-Danmaku/releases/latest", {
+        headers: { "User-Agent": "BiliBili-AI-Danmaku-UpdateCheck" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!resp.ok) {
+        return { status: "error", message: `GitHub 返回 ${resp.status}` };
+      }
+      const data = await resp.json() as { tag_name?: string; html_url?: string; body?: string };
+      const tagName = String(data.tag_name || "").replace(/^v/, "");
+      if (!tagName) {
+        return { status: "error", message: "无法解析最新版本号" };
+      }
+      // 纯数字比较（只取数字和点），防止字母差异导致误判
+      const toNums = (v: string) => (v.match(/\d+/g) || []).map(Number);
+      const curNums = toNums(currentVersion);
+      const latNums = toNums(tagName);
+      let hasUpdate = false;
+      const maxLen = Math.max(curNums.length, latNums.length);
+      for (let i = 0; i < maxLen; i++) {
+        const c = curNums[i] ?? 0;
+        const l = latNums[i] ?? 0;
+        if (l > c) { hasUpdate = true; break; }
+        if (l < c) { break; }
+      }
+      return {
+        status: "ok",
+        currentVersion,
+        latestVersion: tagName,
+        hasUpdate,
+        releaseUrl: data.html_url || `https://github.com/xgxdmx/BiliBili-AI-Danmaku/releases/latest`,
+        releaseNotes: data.body || "",
+      };
+    } catch (err: any) {
+      return { status: "error", message: err?.message || "检查更新失败" };
+    }
+  });
+
+  // ─── 在系统浏览器中打开链接 ──────────────────────────────────
+  ipcMain.handle("shell:openExternal", async (_event, url: string) => {
+    try {
+      await shell.openExternal(url);
+      return { status: "ok" };
+    } catch (err: any) {
+      return { status: "error", message: err?.message || "打开链接失败" };
+    }
+  });
 }
 
 // ─── 单实例限制 ────────────────────────────────────────────

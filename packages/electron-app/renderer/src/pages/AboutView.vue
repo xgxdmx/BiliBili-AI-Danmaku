@@ -14,12 +14,10 @@ const APP_INFO = {
 // ─── 技术栈 ─────────────────────────────────────────────────────
 const TECH_STACK = [
   { name: "Electron", version: "41" },
-  { name: "Vite", version: "6.4.1" },
+  { name: "Vite", version: "6.4" },
   { name: "Vue", version: "3" },
   { name: "Python", version: "3.13" },
-  { name: "aiohttp", version: "3.9" },
   { name: "blivedm", version: "1.1.5" },
-
 ];
 
 // ─── 开源致谢 ───────────────────────────────────────────────────
@@ -41,11 +39,55 @@ const themeOptions: { value: ThemeMode; label: string; desc: string }[] = [
   { value: "system", label: "💻 跟随系统", desc: "自动匹配系统主题" },
 ];
 
+// ─── 版本更新检查 ───────────────────────────────────────────────
+type UpdateStatus = "idle" | "checking" | "up-to-date" | "has-update" | "error";
+const updateStatus = ref<UpdateStatus>("idle");
+const updateMessage = ref("");
+const latestVersion = ref("");
+const releaseUrl = ref("");
+
+async function checkUpdate() {
+  updateStatus.value = "checking";
+  updateMessage.value = "";
+  try {
+    const result = await window.danmakuAPI?.checkUpdate();
+    if (!result || result.status !== "ok") {
+      updateStatus.value = "error";
+      updateMessage.value = result?.message || "检查更新失败";
+      return;
+    }
+    latestVersion.value = result.latestVersion || "";
+    releaseUrl.value = result.releaseUrl || "";
+    if (result.hasUpdate) {
+      updateStatus.value = "has-update";
+      updateMessage.value = `发现新版本 v${latestVersion.value}`;
+    } else {
+      updateStatus.value = "up-to-date";
+      updateMessage.value = "已是最新版本";
+    }
+  } catch {
+    updateStatus.value = "error";
+    updateMessage.value = "网络连接失败";
+  }
+}
+
+function openReleasePage() {
+  if (releaseUrl.value) {
+    window.danmakuAPI?.openExternal(releaseUrl.value);
+  }
+}
+
+function openLink(url: string) {
+  window.danmakuAPI?.openExternal(url);
+}
+
 onMounted(async () => {
   try {
     const result = await window.danmakuAPI?.getTheme();
     if (result) themeMode.value = result.mode;
   } catch { /* 忽略 */ }
+  // 启动时自动检查更新
+  checkUpdate();
 });
 
 async function setTheme(mode: ThemeMode) {
@@ -76,7 +118,27 @@ async function setTheme(mode: ThemeMode) {
     <div class="info-card">
       <div class="info-row">
         <span class="info-label">版本</span>
-        <span class="info-value">{{ APP_INFO.version }}</span>
+        <div class="info-value-group">
+          <span class="info-value">v{{ APP_INFO.version }}</span>
+          <span
+            v-if="updateStatus === 'checking'"
+            class="update-badge checking"
+          >检查中...</span>
+          <span
+            v-else-if="updateStatus === 'up-to-date'"
+            class="update-badge up-to-date"
+          >✓ 已是最新</span>
+          <button
+            v-else-if="updateStatus === 'has-update'"
+            class="update-badge has-update"
+            @click="openReleasePage"
+          >↑ {{ updateMessage }}</button>
+          <span
+            v-else-if="updateStatus === 'error'"
+            class="update-badge error"
+            :title="updateMessage"
+          >检查失败</span>
+        </div>
       </div>
       <div class="info-row">
         <span class="info-label">作者</span>
@@ -123,16 +185,15 @@ async function setTheme(mode: ThemeMode) {
     <div class="section">
       <h3 class="section-title">开源致谢</h3>
       <div class="oss-list">
-        <a
+        <button
           v-for="lib in OPEN_SOURCE"
           :key="lib.name"
-          :href="lib.url"
-          target="_blank"
           class="oss-item"
+          @click="openLink(lib.url)"
         >
           <span class="oss-name">{{ lib.name }}</span>
           <span class="oss-arrow">↗</span>
-        </a>
+        </button>
       </div>
     </div>
 
@@ -212,15 +273,47 @@ async function setTheme(mode: ThemeMode) {
   font-weight: 500;
 }
 
-.info-link {
-  color: var(--accent);
-  text-decoration: none;
-  transition: color 0.15s;
+.info-value-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.info-link:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
+/* ─── 版本更新标记 ──────────────────────────── */
+.update-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: none;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.update-badge.checking {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.update-badge.up-to-date {
+  background: #9ece6a22;
+  color: #9ece6a;
+}
+
+.update-badge.has-update {
+  background: #7aa2f722;
+  color: #7aa2f7;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.update-badge.has-update:hover {
+  background: #7aa2f744;
+}
+
+.update-badge.error {
+  background: #f7768e22;
+  color: #f7768e;
 }
 
 /* ─── 段落 ─────────────────────────────── */
@@ -278,9 +371,13 @@ async function setTheme(mode: ThemeMode) {
   justify-content: space-between;
   padding: 8px 12px;
   border-radius: 6px;
-  text-decoration: none;
+  border: none;
+  background: none;
   color: var(--text-primary);
   font-size: 13px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
   transition: background 0.15s;
 }
 

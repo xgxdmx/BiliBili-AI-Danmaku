@@ -396,6 +396,14 @@ class _DanmakuHandler:
         """设置 blivedm 客户端引用（blivedm 回调接口要求）"""
         self.client = client
 
+    def on_client_stopped(self, client, exception):
+        """blivedm 生命周期回调：客户端停止时触发。"""
+        if exception is not None:
+            try:
+                log_stderr(f"[Danmaku client stopped] {exception}")
+            except Exception:
+                pass
+
     def handle(self, client, command):
         """直接处理所有命令 - 修复 blivedm 的异步回调 bug"""
         cmd = command.get("cmd", "")

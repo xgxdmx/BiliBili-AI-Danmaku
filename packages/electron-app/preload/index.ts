@@ -150,6 +150,18 @@ export interface DanmakuAPI {
   respondCloseConfirm: (payload: { requestId: string; action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
   /** 关闭确认动作直达通道（不依赖 requestId，作为兜底） */
   submitCloseConfirmAction: (payload: { action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
+  /** 检查 GitHub Releases 是否有新版本 */
+  checkUpdate: () => Promise<{
+    status: string;
+    currentVersion?: string;
+    latestVersion?: string;
+    hasUpdate?: boolean;
+    releaseUrl?: string;
+    releaseNotes?: string;
+    message?: string;
+  }>;
+  /** 在系统浏览器中打开链接 */
+  openExternal: (url: string) => Promise<{ status: string; message?: string }>;
 }
 
 const api: DanmakuAPI = {
@@ -237,6 +249,8 @@ const api: DanmakuAPI = {
   },
   respondCloseConfirm: (payload) => ipcRenderer.invoke("window:closeConfirmRespond", payload),
   submitCloseConfirmAction: (payload) => ipcRenderer.invoke("window:closeConfirmAction", payload),
+  checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
+  openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
 };
 
 contextBridge.exposeInMainWorld("danmakuAPI", api);

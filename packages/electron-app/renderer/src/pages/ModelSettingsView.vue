@@ -74,7 +74,8 @@ const providerOptions: ProviderOption[] = [
         label: "── 免费模型 (Zen 免费额度) ──",
         models: [
           { id: "minimax-m2.5-free", name: "MiniMax M2.5 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "trinity-large-preview-free", name: "Trinity Large Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "hy3-preview-free", name: "Hy3 Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "ling-2.6-flash", name: "Ling 2.6 Flash", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "nemotron-3-super-free", name: "Nemotron 3 Super Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "big-pickle", name: "Big Pickle", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
         ],
@@ -82,22 +83,27 @@ const providerOptions: ProviderOption[] = [
       {
         label: "── Go 方案 ($5→$10/月 订阅) ──",
         models: [
-          { id: "glm-5.1", name: "GLM 5.1", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "glm-5", name: "GLM 5", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "glm-4.7", name: "GLM 4.7", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "glm-4.6", name: "GLM 4.6", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "kimi-k2.5", name: "Kimi K2.5", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "kimi-k2", name: "Kimi K2", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "kimi-k2-thinking", name: "Kimi K2 Thinking", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "qwen3.5-plus", name: "Qwen 3.5 Plus", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "minimax-m2.5", name: "MiniMax M2.5", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "minimax-m2.1", name: "MiniMax M2.1", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "glm-5", name: "GLM-5", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "glm-5.1", name: "GLM-5.1", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "kimi-k2.5", name: "Kimi K2.5", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "kimi-k2.6", name: "Kimi K2.6", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "mimo-v2-pro", name: "MiMo-V2-Pro", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "mimo-v2-omni", name: "MiMo-V2-Omni", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "mimo-v2.5-pro", name: "MiMo-V2.5-Pro", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "mimo-v2.5", name: "MiMo-V2.5", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "minimax-m2.5", name: "MiniMax M2.5", endpoint: "https://opencode.ai/zen/go/v1/messages" },
+          { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "qwen3.5-plus", name: "Qwen 3.5 Plus", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "minimax-m2.7", name: "MiniMax M2.7", endpoint: "https://opencode.ai/zen/go/v1/messages" },
+          { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", endpoint: "https://opencode.ai/zen/go/v1/messages" },
+          { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", endpoint: "https://opencode.ai/zen/go/v1/messages" },
         ],
       },
       {
         label: "── Zen 方案 ($20 即用即付) ──",
         models: [
+          { id: "gpt-5.5", name: "GPT 5.5", endpoint: "https://opencode.ai/zen/v1/responses" },
+          { id: "gpt-5.5-pro", name: "GPT 5.5 Pro", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.4", name: "GPT 5.4", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.4-pro", name: "GPT 5.4 Pro", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.4-mini", name: "GPT 5.4 Mini", endpoint: "https://opencode.ai/zen/v1/responses" },
@@ -122,9 +128,9 @@ const providerOptions: ProviderOption[] = [
           { id: "claude-sonnet-4", name: "Claude Sonnet 4", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-3-5-haiku", name: "Claude Haiku 3.5", endpoint: "https://opencode.ai/zen/v1/messages" },
-          { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "gemini-3-pro", name: "Gemini 3 Pro", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "gemini-3-flash", name: "Gemini 3 Flash", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", endpoint: "https://opencode.ai/zen/v1/models/gemini-3.1-pro" },
+          { id: "gemini-3-pro", name: "Gemini 3 Pro", endpoint: "https://opencode.ai/zen/v1/models/gemini-3-pro" },
+          { id: "gemini-3-flash", name: "Gemini 3 Flash", endpoint: "https://opencode.ai/zen/v1/models/gemini-3-flash" },
         ],
       },
     ],
@@ -239,11 +245,16 @@ async function fetchOpenCodeModelList() {
     const result = await api.fetchOpenCodeModels();
     if (result.status === "ok" && Array.isArray(result.models)) {
       opencodeRemoteIds.value = result.models;
+      ensureOpenCodeModelSelectionValid();
     } else {
+      opencodeRemoteIds.value = [];
       opencodeError.value = result.message || "获取模型列表失败";
+      ensureOpenCodeModelSelectionValid();
     }
   } catch (e: any) {
+    opencodeRemoteIds.value = [];
     opencodeError.value = e?.message || "连接 OpenCode 失败";
+    ensureOpenCodeModelSelectionValid();
   } finally {
     opencodeLoading.value = false;
   }
@@ -275,8 +286,45 @@ const clearingQueue = ref(false);
 const clearingPreview = ref(false);
 const showProviderModal = ref(false);
 const showApiKey = ref(false);
+const modelMenuOpen = ref(false);
+const modelMenuRef = ref<HTMLElement | null>(null);
 
 const selectedProvider = computed(() => providerOptions.find((p) => p.id === form.provider) || providerOptions[0]);
+const isOpenCodeStaticFallback = computed(() => {
+  return form.provider === "opencode" && !!opencodeError.value && opencodeRemoteIds.value.length === 0;
+});
+
+type OpenCodeTier = "free" | "go" | "zen" | "unknown";
+
+/**
+ * 远端新增模型的手工分层映射。
+ */
+const remoteOpenCodeTierOverrides: Record<string, Exclude<OpenCodeTier, "unknown">> = {
+  "big-pickle": "free",
+  // "model-id": "go",
+  // "model-id": "zen",
+};
+
+function isFreeModel(modelId: string, modelName?: string): boolean {
+  const id = modelId.toLowerCase();
+  const name = (modelName || "").toLowerCase();
+  return id.includes("free") || name.includes("free") || id === "big-pickle";
+}
+
+function inferOpenCodeEndpointByModelId(modelId: string): string {
+  if (modelId.startsWith("gemini-")) return `https://opencode.ai/zen/v1/models/${modelId}`;
+  if (modelId.startsWith("gpt-")) return "https://opencode.ai/zen/v1/responses";
+  if (modelId.startsWith("claude-")) return "https://opencode.ai/zen/v1/messages";
+  return "https://opencode.ai/zen/v1/chat/completions";
+}
+
+function classifyRemoteOpenCodeTier(modelId: string): OpenCodeTier {
+  const overridden = remoteOpenCodeTierOverrides[modelId];
+  if (overridden) return overridden;
+  if (isFreeModel(modelId)) return "free";
+  return "unknown";
+}
+
 const modelGroups = computed(() => {
   if (form.provider === "ollama") {
     return ollamaModels.value.length > 0
@@ -289,18 +337,132 @@ const modelGroups = computed(() => {
     // 未拉取远程时，使用静态完整列表
     return staticGroups;
   }
+
+  const staticModelIds = new Set(staticGroups.flatMap((g) => g.models.map((m) => m.id)));
   const remoteSet = new Set(opencodeRemoteIds.value);
-  return staticGroups
+  // Go 分组的模型 endpoint 已硬编码为 /zen/go/v1/，不依赖远端发现，始终显示
+  let groupedFromStatic = staticGroups
     .map((group) => ({
       ...group,
-      models: group.models.filter((m) => remoteSet.has(m.id)),
+      models: group.label.includes("Go")
+        ? group.models // Go 分组：不过滤，始终显示
+        : group.models.filter((m) => remoteSet.has(m.id)), // 其余分组：只显示远端存在的
     }))
     .filter((group) => group.models.length > 0);
+
+  // 强制规则：名称或 id 含 free（以及 big-pickle）都归类到免费组
+  const forcedFreeMap = new Map<string, ProviderModel>();
+  for (const group of groupedFromStatic) {
+    for (const model of group.models) {
+      if (isFreeModel(model.id, model.name)) {
+        forcedFreeMap.set(model.id, model);
+      }
+    }
+  }
+  if (forcedFreeMap.size > 0) {
+    groupedFromStatic = groupedFromStatic
+      .map((group) => ({
+        ...group,
+        models: group.models.filter((m) => !isFreeModel(m.id, m.name)),
+      }))
+      .filter((group) => group.models.length > 0);
+
+    groupedFromStatic.unshift({
+      label: "── 免费模型 (Zen 免费额度) ──",
+      models: Array.from(forcedFreeMap.values()),
+    });
+  }
+
+  const remoteOnlyByTier: Record<OpenCodeTier, ProviderModel[]> = {
+    free: [],
+    go: [],
+    zen: [],
+    unknown: [],
+  };
+
+  const remoteOnlyIds = opencodeRemoteIds.value.filter((id) => !staticModelIds.has(id));
+  for (const id of remoteOnlyIds) {
+    const tier = classifyRemoteOpenCodeTier(id);
+    remoteOnlyByTier[tier].push({
+      id,
+      name: id,
+      endpoint: inferOpenCodeEndpointByModelId(id),
+    });
+  }
+
+  if (remoteOnlyByTier.free.length > 0) {
+    for (const model of remoteOnlyByTier.free) {
+      forcedFreeMap.set(model.id, model);
+    }
+    groupedFromStatic = groupedFromStatic.filter((group) => group.label !== "── 免费模型 (Zen 免费额度) ──");
+    groupedFromStatic.unshift({
+      label: "── 免费模型 (Zen 免费额度) ──",
+      models: Array.from(forcedFreeMap.values()),
+    });
+  }
+  if (remoteOnlyByTier.go.length > 0) {
+    groupedFromStatic.push({
+      label: "── 远端新增模型（已标记：Go） ──",
+      models: remoteOnlyByTier.go,
+    });
+  }
+  if (remoteOnlyByTier.zen.length > 0) {
+    groupedFromStatic.push({
+      label: "── 远端新增模型（已标记：Zen） ──",
+      models: remoteOnlyByTier.zen,
+    });
+  }
+  if (remoteOnlyByTier.unknown.length > 0) {
+    groupedFromStatic.push({
+      label: "── 远端新增模型（Go/Zen） ──",
+      models: remoteOnlyByTier.unknown,
+    });
+  }
+
+  return groupedFromStatic;
 });
 const modelOptions = computed(() => {
   // 从 modelGroups 展平出全部模型列表，保持顺序
   return modelGroups.value.flatMap((g) => g.models);
 });
+
+const selectedModelLabel = computed(() => {
+  const model = modelOptions.value.find((m) => m.id === form.modelId);
+  return model?.name || form.modelId || "请选择模型";
+});
+
+function selectModel(model: ProviderModel): void {
+  form.modelId = model.id;
+  form.endpoint = model.endpoint;
+  modelMenuOpen.value = false;
+}
+
+function toggleModelMenu(): void {
+  modelMenuOpen.value = !modelMenuOpen.value;
+}
+
+function handleGlobalPointerDown(event: Event): void {
+  const target = event.target as Node | null;
+  if (!target) return;
+  if (modelMenuRef.value && !modelMenuRef.value.contains(target)) {
+    modelMenuOpen.value = false;
+  }
+}
+
+function ensureOpenCodeModelSelectionValid(): void {
+  if (form.provider !== "opencode") return;
+
+  if (modelOptions.value.length === 0) {
+    form.modelId = "";
+    return;
+  }
+
+  const exists = modelOptions.value.some((m) => m.id === form.modelId);
+  if (!exists) {
+    form.modelId = modelOptions.value[0].id;
+    form.endpoint = modelOptions.value[0].endpoint;
+  }
+}
 
 let promptTimer: ReturnType<typeof setTimeout> | null = null;
 let promptSavedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -414,6 +576,13 @@ watch(
     if (model) {
       form.endpoint = model.endpoint;
     }
+  }
+);
+
+watch(
+  () => form.provider,
+  () => {
+    modelMenuOpen.value = false;
   }
 );
 
@@ -665,6 +834,7 @@ function actionText(action: ReplyDecision["action"]): string {
 
 onMounted(() => {
   loadConfig();
+  window.addEventListener("mousedown", handleGlobalPointerDown);
   const api = window.danmakuAPI;
   if (api?.onAIStatus) {
       offAIStatus = api.onAIStatus((status: any) => {
@@ -689,6 +859,7 @@ onUnmounted(() => {
   void flushPromptIfNeeded();
   if (promptSavedTimer) clearTimeout(promptSavedTimer);
   offAIStatus?.();
+  window.removeEventListener("mousedown", handleGlobalPointerDown);
 });
 </script>
 
@@ -707,11 +878,18 @@ onUnmounted(() => {
       <div class="field">
         <label class="field-label">供应商</label>
         <div class="provider-row">
-          <select v-model="form.provider" class="field-input provider-select">
-            <option v-for="provider in providerOptions" :key="provider.id" :value="provider.id">
-              {{ provider.name }}
-            </option>
-          </select>
+          <div class="provider-select-wrap">
+            <select v-model="form.provider" class="field-input provider-select">
+              <option v-for="provider in providerOptions" :key="provider.id" :value="provider.id">
+                {{ provider.name }}
+              </option>
+            </select>
+            <span class="provider-select-caret" aria-hidden="true">
+              <svg viewBox="0 0 12 12" class="provider-select-caret-icon" focusable="false">
+                <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+          </div>
           <button class="btn btn-muted" @click="showProviderModal = true">说明</button>
         </div>
       </div>
@@ -732,13 +910,31 @@ onUnmounted(() => {
 
         <div class="field">
           <label class="field-label">模型</label>
-          <select v-model="form.modelId" class="field-input">
-            <optgroup v-for="group in modelGroups" :key="group.label" :label="group.label">
-              <option v-for="model in group.models" :key="model.id" :value="model.id">
-                {{ model.name }}
-              </option>
-            </optgroup>
-          </select>
+          <div ref="modelMenuRef" class="model-select-wrap">
+            <button type="button" class="field-input model-select-trigger" @click="toggleModelMenu">
+              <span class="model-select-value">{{ selectedModelLabel }}</span>
+              <span class="model-select-caret" aria-hidden="true">
+                <svg viewBox="0 0 12 12" class="model-select-caret-icon" focusable="false">
+                  <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+            </button>
+            <div v-if="modelMenuOpen" class="model-select-menu">
+              <div v-for="group in modelGroups" :key="group.label" class="model-select-group">
+                <div class="model-select-group-label">{{ group.label }}</div>
+                <button
+                  v-for="model in group.models"
+                  :key="model.id"
+                  type="button"
+                  class="model-select-option"
+                  :class="{ active: form.modelId === model.id }"
+                  @click="selectModel(model)"
+                >
+                  {{ model.name }}
+                </button>
+              </div>
+            </div>
+          </div>
           <div v-if="modelOptions.length === 0 && !ollamaLoading" class="msg-inline" style="margin-top:4px">请先点击「刷新模型」拉取本地模型列表</div>
         </div>
       </template>
@@ -748,19 +944,40 @@ onUnmounted(() => {
         <div class="field">
           <label class="field-label">模型</label>
           <div class="ollama-url-row">
-            <select v-model="form.modelId" class="field-input ollama-url-input">
-              <optgroup v-for="group in modelGroups" :key="group.label" :label="group.label">
-                <option v-for="model in group.models" :key="model.id" :value="model.id">
-                  {{ model.name }}
-                </option>
-              </optgroup>
-            </select>
+            <div ref="modelMenuRef" class="model-select-wrap ollama-url-input">
+              <button type="button" class="field-input model-select-trigger" @click="toggleModelMenu">
+                <span class="model-select-value">{{ selectedModelLabel }}</span>
+                <span class="model-select-caret" aria-hidden="true">
+                  <svg viewBox="0 0 12 12" class="model-select-caret-icon" focusable="false">
+                    <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+              </button>
+              <div v-if="modelMenuOpen" class="model-select-menu">
+                <div v-for="group in modelGroups" :key="group.label" class="model-select-group">
+                  <div class="model-select-group-label">{{ group.label }}</div>
+                  <button
+                    v-for="model in group.models"
+                    :key="model.id"
+                    type="button"
+                    class="model-select-option"
+                    :class="{ active: form.modelId === model.id }"
+                    @click="selectModel(model)"
+                  >
+                    {{ model.name }}
+                  </button>
+                </div>
+              </div>
+            </div>
             <button class="btn btn-muted" :disabled="opencodeLoading" @click="fetchOpenCodeModelList">
               {{ opencodeLoading ? "刷新中..." : "刷新模型" }}
             </button>
           </div>
           <div v-if="opencodeError" class="msg-inline msg-error">{{ opencodeError }}</div>
           <div v-if="opencodeRemoteIds.length > 0" class="msg msg-success" style="margin-top:6px">已同步 {{ opencodeRemoteIds.length }} 个模型</div>
+          <div v-else-if="isOpenCodeStaticFallback" class="msg-inline msg-warning" style="margin-top:6px">
+            当前使用本地静态模型列表（OpenCode 远端列表拉取失败），部分模型可能暂不可用。
+          </div>
         </div>
 
         <div class="field">
@@ -1047,6 +1264,119 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.model-select-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.model-select-trigger {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-height: 0;
+  padding: 6px 28px 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  text-align: left;
+  line-height: 1.4;
+  cursor: pointer;
+  position: relative;
+}
+
+.model-select-trigger:hover {
+  border-color: var(--border);
+}
+
+.model-select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.model-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-select-caret {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  opacity: 0.6;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.model-select-caret-icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.model-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  max-height: min(360px, calc(100vh - 220px));
+  overflow: auto;
+}
+
+.model-select-group {
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-select-group:last-child {
+  border-bottom: none;
+}
+
+.model-select-group-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 8px;
+}
+
+.model-select-option {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.model-select-option:hover {
+  background: rgba(122, 162, 247, 0.12);
+  color: var(--text-primary);
+}
+
+.model-select-option.active {
+  background: rgba(122, 162, 247, 0.2);
+  color: var(--accent);
+}
+
 .field-inline-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1166,8 +1496,36 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.provider-select {
+.provider-select-wrap {
+  position: relative;
   flex: 1;
+}
+
+.provider-select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 28px;
+}
+
+.provider-select-caret {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  opacity: 0.6;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.provider-select-caret-icon {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 
 .modal-overlay {

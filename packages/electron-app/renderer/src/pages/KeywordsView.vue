@@ -454,7 +454,12 @@ async function toggleQuickReply(id: string) {
             排除: <span v-for="w in rule.notContains" :key="w" class="qr-tag excludes">{{ w }}</span>
           </div>
           <div class="qr-reply">→ {{ rule.reply }}</div>
-          <div v-if="rule.cooldownMs > 0" class="qr-cooldown">冷却 {{ Math.round(rule.cooldownMs / 1000) }}s</div>
+          <div class="qr-meta">
+            <span v-if="rule.cooldownMs > 0" class="qr-cooldown">冷却 {{ Math.round(rule.cooldownMs / 1000) }}s</span>
+            <span class="qr-case-sensitive" :class="{ active: rule.caseSensitive }">
+              {{ rule.caseSensitive ? '区分大小写' : '不区分大小写' }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -605,10 +610,35 @@ async function toggleQuickReply(id: string) {
   font-weight: 500;
 }
 
+.qr-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
 .qr-cooldown {
   font-size: 10px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+.qr-case-sensitive {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-top: 2px;
+  display: inline-block;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.qr-case-sensitive.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .btn-muted {
