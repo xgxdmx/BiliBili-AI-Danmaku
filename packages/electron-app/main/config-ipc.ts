@@ -25,6 +25,16 @@ import type { CloseWindowDialogAction } from "./app-shell";
  * 这部分只依赖主窗口与运行时引擎引用，适合从 index.ts 独立出来。
  */
 export function registerConfigIpcHandlers(context: MainAppContext): void {
+  const parseCloseAction = (action: unknown): CloseWindowDialogAction | null => {
+    return action === "tray" || action === "exit" || action === "cancel" ? action : null;
+  };
+
+  const applyCloseAction = (action: CloseWindowDialogAction, remember: boolean) => {
+    context.setPendingCloseDecisionRequestId(null);
+    context.applyCloseDecision(action, remember);
+    return { status: "ok" as const };
+  };
+
   /** 渲染进程返回关闭确认弹窗结果 */
   ipcMain.handle(
     "window:closeConfirmRespond",
@@ -33,10 +43,10 @@ export function registerConfigIpcHandlers(context: MainAppContext): void {
       payload: { requestId?: string; action?: CloseWindowDialogAction; remember?: boolean },
     ) => {
       const requestId = String(payload?.requestId || "");
-      const action = payload?.action;
+      const action = parseCloseAction(payload?.action);
       const remember = Boolean(payload?.remember);
 
-      if (action !== "tray" && action !== "exit" && action !== "cancel") {
+      if (!action) {
         return { status: "ignored" };
       }
 
@@ -50,9 +60,7 @@ export function registerConfigIpcHandlers(context: MainAppContext): void {
         });
       }
 
-      context.setPendingCloseDecisionRequestId(null);
-      context.applyCloseDecision(action, remember);
-      return { status: "ok" };
+      return applyCloseAction(action, remember);
     },
   );
 
@@ -66,15 +74,13 @@ export function registerConfigIpcHandlers(context: MainAppContext): void {
       _event,
       payload: { action?: CloseWindowDialogAction; remember?: boolean },
     ) => {
-      const action = payload?.action;
+      const action = parseCloseAction(payload?.action);
       const remember = Boolean(payload?.remember);
-      if (action !== "tray" && action !== "exit" && action !== "cancel") {
+      if (!action) {
         return { status: "ignored" };
       }
 
-      context.setPendingCloseDecisionRequestId(null);
-      context.applyCloseDecision(action, remember);
-      return { status: "ok" };
+      return applyCloseAction(action, remember);
     },
   );
 

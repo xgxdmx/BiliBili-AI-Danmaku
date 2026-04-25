@@ -7,8 +7,13 @@ import { EventEmitter } from "events";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import * as fs from "fs";
+import { app as electronApp } from "electron";
 import { logger } from "./logger";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /** Windows: 仅结束“可执行路径完全匹配”的 run.exe 进程。 */
 function killRunExeByExactPathSync(executablePath: string): void {
@@ -70,8 +75,7 @@ export function cleanupBundledRunExeResidualsSync(): void {
   if (isDevMode) return;
 
   try {
-    const { app } = require("electron");
-    const resourcesPath = process.resourcesPath || app.getAppPath();
+    const resourcesPath = process.resourcesPath || electronApp.getAppPath();
     const basePath = join(resourcesPath, "danmaku-core");
     const runExe = join(basePath, "run.exe");
     const runExeNested = join(basePath, "run", "run.exe");
@@ -96,8 +100,7 @@ export async function verifyBundledRunExeResidualsAfterCleanup(waitMs = 1200): P
   if (isDevMode) return;
 
   try {
-    const { app } = require("electron");
-    const resourcesPath = process.resourcesPath || app.getAppPath();
+    const resourcesPath = process.resourcesPath || electronApp.getAppPath();
     const basePath = join(resourcesPath, "danmaku-core");
     const candidates = [join(basePath, "run.exe"), join(basePath, "run", "run.exe")].filter((p) => fs.existsSync(p));
     if (candidates.length === 0) return;
@@ -328,8 +331,7 @@ export class DanmakuService extends EventEmitter {
         : join(__dirname, "..", "..", "..", "..", ".venv", "bin", "python");
       pythonPath = fs.existsSync(venvPython) ? venvPython : (isWin ? "python" : "python3");
     } else {
-      const { app } = require("electron");
-      const resourcesPath = process.resourcesPath || app.getAppPath();
+      const resourcesPath = process.resourcesPath || electronApp.getAppPath();
       basePath = join(resourcesPath, "danmaku-core");
       pythonPath = isWin ? "python" : "python3";
     }

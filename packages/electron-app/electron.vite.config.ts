@@ -1,7 +1,11 @@
-import { resolve } from "path";
+import { resolve, dirname } from "path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import vue from "@vitejs/plugin-vue";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf-8"));
 
@@ -19,6 +23,12 @@ export default defineConfig({
     build: {
       lib: {
         entry: resolve("preload/index.ts"),
+      },
+      rollupOptions: {
+        output: {
+          format: "es",
+          entryFileNames: "index.mjs",
+        },
       },
     },
   },

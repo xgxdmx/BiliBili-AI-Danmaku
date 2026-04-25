@@ -1,4 +1,5 @@
 /* App.vue scoped styles */
+
 .app-shell {
   display: flex;
   height: 100vh;
@@ -22,15 +23,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent);
+  color: #9eb7ff;
   cursor: pointer;
   margin-bottom: 12px;
   border-radius: 8px;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s, box-shadow 0.2s;
+  box-shadow: 0 0 14px var(--sidebar-glow);
 }
 
 .sidebar-logo:hover {
   background: var(--bg-hover);
+  color: #c5d4ff;
+  box-shadow: 0 0 18px var(--sidebar-glow);
+}
+
+.dream-icon {
+  filter: drop-shadow(0 0 6px #7dcfff55);
 }
 
 .sidebar-nav {
@@ -38,8 +46,30 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding: 4px 0;
+}
+
+.nav-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+.nav-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .nav-btn {
@@ -64,27 +94,121 @@
   color: var(--accent);
 }
 
-.sidebar-bottom {
-  padding: 8px 0;
-}
-
-.connection-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.connection-dot.connected {
-  background: var(--success);
-  box-shadow: 0 0 6px var(--success);
-}
-
-.connection-dot.disconnected {
-  background: var(--text-muted);
-}
-
 .main-area {
   flex: 1;
   overflow: auto;
   background: var(--bg-primary);
+}
+
+.close-modal-mask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b10208a;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  z-index: 9999;
+  padding: 16px;
+}
+
+.close-modal-card {
+  width: min(560px, calc(100vw - 32px));
+  background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-border) 76%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow:
+    0 18px 44px #00000052,
+    inset 0 1px 0 #ffffff1a;
+}
+
+.close-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.close-modal-detail {
+  margin-top: 8px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.close-modal-remember {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.close-modal-remember input {
+  width: auto;
+}
+
+.close-modal-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quitting-mask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #090f1f96;
+  backdrop-filter: blur(20px) saturate(145%);
+  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  z-index: 10000;
+}
+
+.quitting-card {
+  width: min(360px, calc(100vw - 32px));
+  background: color-mix(in srgb, var(--bg-secondary) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-border) 78%, transparent);
+  backdrop-filter: blur(24px) saturate(155%);
+  -webkit-backdrop-filter: blur(24px) saturate(155%);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow:
+    0 18px 44px #00000052,
+    inset 0 1px 0 #ffffff1a;
+  text-align: center;
+}
+
+.quitting-spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  margin: 0 auto 10px;
+  animation: quitting-spin 0.8s linear infinite;
+}
+
+.quitting-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.quitting-desc {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+@keyframes quitting-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

@@ -8,8 +8,10 @@
 //   4. 进程退出清理（SIGINT / SIGTERM / window-all-closed）
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, Menu, Tray, shell } from "electron";
-import { join } from "path";
+import { app, BrowserWindow, ipcMain, Menu, Tray } from "electron";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import {
   DanmakuService,
   cleanupBundledRunExeResidualsSync,
@@ -25,6 +27,24 @@ import { clearElectronRuntimeCachesOnExit } from "./runtime-cache";
 import { registerAuthIpcHandlers } from "./auth-window";
 import { registerConfigIpcHandlers } from "./config-ipc";
 import { registerAiIpcHandlers } from "./ai-ipc";
+import { registerAppUtilityIpcHandlers } from "./app-utility-ipc";
+import {
+  isAiEligible,
+  isQuickReplyEligible,
+  resolveMatchScope,
+  type KeywordScope,
+} from "./danmaku-routing";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function resolvePreloadScriptPath(): string {
+  const candidates = [
+    join(__dirname, "../preload/index.mjs"),
+    join(__dirname, "../preload/index.js"),
+  ];
+  return candidates.find((p) => existsSync(p)) || candidates[0];
+}
 
 /** B站登录子窗口引用（同一时刻只允许一个） */
 let biliLoginWindow: BrowserWindow | null = null;
@@ -202,7 +222,8 @@ function createWindow(): void {
     frame: true,
     backgroundColor: "#1a1b26",
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: resolvePreloadScriptPath(),
+      sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -323,64 +344,51 @@ function registerIpcHandlers(): void {
 
     if (!danmakuService) {
       danmakuService = new DanmakuService();
-danmakuService.on("danmaku", (data) => {
-         mainWindow?.webContents.send("danmaku:received", data);
-         const username = data?.sender?.username || "";
-         if (shouldIgnoreByUsername(username)) return;
+      danmakuService.on("danmaku", (data) => {
+          mainWindow?.webContents.send("danmaku:received", data);
+          const username = data?.sender?.username || "";
+          if (shouldIgnoreByUsername(username)) return;
 
          // ── 捕捉开关 ──
          // 关闭后弹幕仅显示，不进入关键词匹配 / 固定回复 / AI 回复流程
          if (getConfig().room?.captureEnabled === false) return;
 
-         const matchScope = (data?.match?.rule?.scope as "both" | "quickReply" | "ai") || "both";
-        const hasKeywordMatch = !!data?.match;
-        const content = data?.content || "";
-        const activeScopes = danmakuService?.getKeywordFilterScopes() ?? new Set<"both" | "quickReply" | "ai">();
+          const matchScope = resolveMatchScope(data?.match?.rule?.scope);
+          const hasKeywordMatch = Boolean(data?.match);
+          const content = data?.content || "";
+          const activeScopes =
+            danmakuService?.getKeywordFilterScopes() ?? new Set<KeywordScope>();
+          const routeContext = { matchScope, hasKeywordMatch, activeScopes };
 
         // ── 固定回复路由 ──
         // scope=both/quickReply: 关键词过滤控制固定回复，只处理命中弹幕
         // scope=ai: 固定回复绕过关键词过滤，处理所有弹幕
         // 未命中弹幕：如果存在 scope=ai 关键词，固定回复也处理（绕过过滤）
-        let quickReplyEligible = false;
-        if (matchScope === "ai") {
-          quickReplyEligible = true;
-        } else if (hasKeywordMatch) {
-          quickReplyEligible = true;
-        } else if (activeScopes.has("ai")) {
-          // 存在 scope=ai 的关键词且当前弹幕未命中 → 固定回复绕过过滤
-          quickReplyEligible = true;
-        }
+          const quickReplyEligible = isQuickReplyEligible(routeContext);
 
         // 固定回复全局开关：关闭时完全不触发固定回复
-        const quickReplyEnabled = getConfig().quickReplyEnabled;
-        const quickMatch = quickReplyEligible && quickReplyEnabled
-          ? (quickReplyEngine?.match(content) ?? null)
-          : null;
-        const quickReplyHandled = Boolean(quickMatch && danmakuService);
+          const quickReplyEnabled = getConfig().quickReplyEnabled;
+          const quickMatch =
+            quickReplyEligible && quickReplyEnabled
+              ? (quickReplyEngine?.match(content) ?? null)
+              : null;
+          const quickReplyHandled = Boolean(quickMatch && danmakuService);
 
-        if (quickMatch && danmakuService) {
-          danmakuService.sendDanmaku({ msg: quickMatch.reply }).catch(() => {});
-        }
+          if (quickMatch && danmakuService) {
+            danmakuService.sendDanmaku({ msg: quickMatch.reply }).catch(() => {});
+          }
 
         // ── AI 回复路由 ──
         // scope=both/ai: 关键词过滤控制 AI，只处理命中弹幕
         // scope=quickReply: AI 绕过关键词过滤，处理所有弹幕
         // 未命中弹幕：如果存在 scope=quickReply 关键词，AI 也处理（绕过过滤）
-        let aiEligible = false;
-        if (matchScope === "quickReply") {
-          aiEligible = true;
-        } else if (hasKeywordMatch) {
-          aiEligible = true;
-        } else if (activeScopes.has("quickReply")) {
-          // 存在 scope=quickReply 的关键词且当前弹幕未命中 → AI 绕过过滤
-          aiEligible = true;
-        }
+          const aiEligible = isAiEligible(routeContext);
 
         // 固定回复优先级高于 AI：一旦命中固定回复，本条弹幕不再进入 AI 队列。
-        if (!quickReplyHandled && aiEligible && aiRelay && !aiRelay.shouldIgnoreIncoming(data)) {
-          aiRelay.enqueue(data);
-        }
-      });
+          if (!quickReplyHandled && aiEligible && aiRelay && !aiRelay.shouldIgnoreIncoming(data)) {
+            aiRelay.enqueue(data);
+          }
+        });
       danmakuService.on("gift", (data) => {
         mainWindow?.webContents.send("danmaku:gift", data);
         const username = data?.sender?.username || "";
@@ -482,57 +490,7 @@ danmakuService.on("danmaku", (data) => {
   registerConfigIpcHandlers(appContext);
   registerAuthIpcHandlers(appContext);
   registerAiIpcHandlers(appContext);
-
-  // ─── 版本更新检查 IPC ──────────────────────────────────────
-  ipcMain.handle("app:checkUpdate", async () => {
-    try {
-      const currentVersion = app.getVersion();
-      const resp = await fetch("https://api.github.com/repos/xgxdmx/BiliBili-AI-Danmaku/releases/latest", {
-        headers: { "User-Agent": "BiliBili-AI-Danmaku-UpdateCheck" },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!resp.ok) {
-        return { status: "error", message: `GitHub 返回 ${resp.status}` };
-      }
-      const data = await resp.json() as { tag_name?: string; html_url?: string; body?: string };
-      const tagName = String(data.tag_name || "").replace(/^v/, "");
-      if (!tagName) {
-        return { status: "error", message: "无法解析最新版本号" };
-      }
-      // 纯数字比较（只取数字和点），防止字母差异导致误判
-      const toNums = (v: string) => (v.match(/\d+/g) || []).map(Number);
-      const curNums = toNums(currentVersion);
-      const latNums = toNums(tagName);
-      let hasUpdate = false;
-      const maxLen = Math.max(curNums.length, latNums.length);
-      for (let i = 0; i < maxLen; i++) {
-        const c = curNums[i] ?? 0;
-        const l = latNums[i] ?? 0;
-        if (l > c) { hasUpdate = true; break; }
-        if (l < c) { break; }
-      }
-      return {
-        status: "ok",
-        currentVersion,
-        latestVersion: tagName,
-        hasUpdate,
-        releaseUrl: data.html_url || `https://github.com/xgxdmx/BiliBili-AI-Danmaku/releases/latest`,
-        releaseNotes: data.body || "",
-      };
-    } catch (err: any) {
-      return { status: "error", message: err?.message || "检查更新失败" };
-    }
-  });
-
-  // ─── 在系统浏览器中打开链接 ──────────────────────────────────
-  ipcMain.handle("shell:openExternal", async (_event, url: string) => {
-    try {
-      await shell.openExternal(url);
-      return { status: "ok" };
-    } catch (err: any) {
-      return { status: "error", message: err?.message || "打开链接失败" };
-    }
-  });
+  registerAppUtilityIpcHandlers();
 }
 
 // ─── 单实例限制 ────────────────────────────────────────────

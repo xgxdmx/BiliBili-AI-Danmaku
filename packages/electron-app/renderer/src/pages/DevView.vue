@@ -170,7 +170,7 @@ async function handleImport() {
           {{ loading ? "处理中..." : "导入配置" }}
         </button>
       </div>
-      <span v-if="message" class="msg" :class="messageType === 'success' ? 'msg-success' : messageType === 'error' ? 'msg-error' : ''" style="margin-top:8px;display:block">{{ message }}</span>
+      <span v-if="message" class="msg dev-message" :class="messageType === 'success' ? 'msg-success' : messageType === 'error' ? 'msg-error' : ''">{{ message }}</span>
     </div>
 
     <div class="card">
@@ -269,97 +269,4 @@ async function handleImport() {
 
 <style scoped>
 @import "../styles/dev.css";
-
-/* ─── 导出选项行 ─── */
-.export-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 10px 0 14px;
-  padding: 10px 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.export-option-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.export-option-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.export-option-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-/* ─── Toggle Pill ─── */
-.toggle-pill {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.toggle-input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-  pointer-events: none;
-}
-
-.toggle-track {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--bg-active);
-  transition: background 0.18s ease;
-}
-
-.toggle-pill.active .toggle-track {
-  background: var(--accent);
-}
-
-.toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #e8eeff;
-  box-shadow: 0 1px 3px #00000040;
-  transition: transform 0.18s ease;
-}
-
-.toggle-pill.active .toggle-knob {
-  transform: translateX(16px);
-}
-
-/* ─── 供应商配置块 ─── */
-.provider-block {
-  margin-top: 10px;
-  padding: 8px 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.provider-title {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
 </style>

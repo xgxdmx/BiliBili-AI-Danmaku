@@ -65,24 +65,5 @@ function formatTime(ts: number): string {
 </template>
 
 <style scoped>
-.page { height: 100vh; display: flex; flex-direction: column; }
-.page-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
-.page-title { font-size: 15px; font-weight: 600; }
-.stat { font-size: 12px; color: var(--text-muted); }
-
-.match-scroll { flex: 1; overflow-y: auto; padding: 4px 0; }
-.m-item { padding: 8px 16px; border-left: 2px solid var(--accent); margin: 4px 12px; background: var(--bg-secondary); border-radius: 4px; }
-.m-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.m-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--accent); color: #fff; }
-.m-rule { font-size: 11px; color: var(--text-muted); }
-.m-user { font-size: 12px; color: var(--cyan); }
-.m-time { font-size: 11px; color: var(--text-muted); margin-left: auto; }
-.m-content { font-size: 13px; color: var(--text-primary); word-break: break-all; }
-.m-groups { display: flex; gap: 6px; margin-top: 4px; }
-.m-group { font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--bg-active); color: var(--warning); }
-
-.empty-banner { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
-.empty-banner p { font-size: 14px; }
-.empty-sub { font-size: 12px !important; margin-top: 4px; }
+@import "../styles/matched.css";
 </style>

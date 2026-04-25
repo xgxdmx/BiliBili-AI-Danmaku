@@ -161,6 +161,38 @@
 .input-with-toggle { display: flex; gap: 6px; align-items: center; width: 100%; box-sizing: border-box; }
 .input-with-toggle .field-input { flex: 1; width: 100%; }
 
+.disconnect-toggle-row {
+  gap: 8px;
+  align-items: center;
+}
+
+.disconnect-toggle-input {
+  width: 16px;
+  height: 16px;
+}
+
+.disconnect-toggle-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.btn-row-mb-8 {
+  margin-bottom: 8px;
+}
+
+.btn-row-space-between {
+  justify-content: space-between;
+}
+
+.card-title-no-margin {
+  margin: 0;
+}
+
+.card-desc-mt-8-mb-0 {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
 .toggle-btn {
   background: var(--bg-primary);
   border: 1px solid var(--border);

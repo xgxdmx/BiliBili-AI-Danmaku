@@ -1,8 +1,9 @@
 {
   "name": "bilibili-danmaku-claw",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Bilibili live danmaku listener with AI integration",
+  "packageManager": "pnpm@10.33.2",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -18,8 +19,8 @@
     "package:clean": "node scripts/build.mjs clean"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

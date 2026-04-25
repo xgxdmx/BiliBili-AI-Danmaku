@@ -287,7 +287,7 @@ async function openPopupLogin() {
 
       <div class="field">
         <label class="field-label">房间号</label>
-        <input v-model="form.roomId" type="text" inputmode="numeric" placeholder="例: 21452505" class="field-input" :disabled="isConnected" />
+        <input v-model="form.roomId" type="text" inputmode="numeric" placeholder="例: 8381545" class="field-input" :disabled="isConnected" />
       </div>
 
       <div v-if="isConnected" class="status-bar">
@@ -303,9 +303,9 @@ async function openPopupLogin() {
 
       <div class="field">
         <label class="field-label">断开前发送告别弹幕</label>
-        <div class="input-with-toggle" style="gap: 8px; align-items: center;">
-          <input v-model="sendBeforeDisconnect" type="checkbox" style="width: 16px; height: 16px;" />
-          <span style="font-size: 12px; color: var(--text-muted);">停止监听前自动发送一句话</span>
+        <div class="input-with-toggle disconnect-toggle-row">
+          <input v-model="sendBeforeDisconnect" type="checkbox" class="disconnect-toggle-input" />
+          <span class="disconnect-toggle-hint">停止监听前自动发送一句话</span>
         </div>
       </div>
 
@@ -343,7 +343,7 @@ async function openPopupLogin() {
 
       <div class="field">
         <label class="field-label">扫码登录（自动获取 Cookie）</label>
-        <div class="btn-row" style="margin-bottom: 8px;">
+        <div class="btn-row btn-row-mb-8">
           <button class="btn btn-accent" :disabled="popupLoginLoading" @click="openPopupLogin">
             {{ popupLoginLoading ? "登录窗口已打开" : "弹出B站登录页" }}
           </button>
@@ -405,11 +405,11 @@ async function openPopupLogin() {
     </div>
 
     <div class="card">
-      <div class="btn-row" style="justify-content: space-between;">
-        <h3 class="card-title" style="margin: 0;">B站连接使用说明</h3>
+      <div class="btn-row btn-row-space-between">
+        <h3 class="card-title card-title-no-margin">B站连接使用说明</h3>
         <button class="btn btn-muted" @click="showBiliHelpModal = true">查看说明</button>
       </div>
-      <p class="card-desc" style="margin-top: 8px; margin-bottom: 0;">
+      <p class="card-desc card-desc-mt-8-mb-0">
         提供扫码登录与浏览器 Cookie 登录两种方式，点击「查看说明」可打开详细步骤。
       </p>
     </div>

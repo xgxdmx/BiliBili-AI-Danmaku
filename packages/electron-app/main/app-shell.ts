@@ -9,9 +9,13 @@
 
 import { app, BrowserWindow, Menu, Tray } from "electron";
 import { existsSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import type { MainAppContext } from "./app-context";
 import { logger } from "./logger";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /** 关闭确认弹窗动作 */
 export type CloseWindowDialogAction = "tray" | "exit" | "cancel";

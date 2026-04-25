@@ -334,7 +334,7 @@ async function toggleQuickReply(id: string) {
 
       <button class="btn btn-ghost" @click="addInputRule">+ 添加规则</button>
 
-      <div class="btn-row" style="margin-top: 16px">
+      <div class="btn-row btn-row-mt-16">
         <button class="btn btn-accent" @click="handleSave">保存并应用</button>
         <span v-if="saved" class="msg-inline msg-success">已保存</span>
         <span v-if="saveError" class="msg-inline msg-error">{{ saveError }}</span>
@@ -342,7 +342,7 @@ async function toggleQuickReply(id: string) {
     </div>
 
     <!-- 已保存的关键词列表 -->
-    <div v-if="savedRules.length > 0" class="card" style="margin-top: 12px;">
+    <div v-if="savedRules.length > 0" class="card card-mt-12">
       <h3 class="card-title">已有关键词 ({{ savedRules.length }})</h3>
       <div class="saved-list">
         <div v-for="rule in savedRules" :key="rule.id" class="saved-item">
@@ -369,9 +369,9 @@ async function toggleQuickReply(id: string) {
     </div>
 
     <!-- 固定回复规则 -->
-    <div class="card" style="margin-top: 12px;">
-      <div class="btn-row" style="justify-content: space-between; margin-bottom: 6px;">
-        <h3 class="card-title" style="margin: 0;">固定回复规则</h3>
+    <div class="card card-mt-12">
+      <div class="btn-row btn-row-space-between btn-row-mb-6">
+        <h3 class="card-title card-title-no-margin">固定回复规则</h3>
         <label class="switch-row">
           <span class="switch-label">全局开关</span>
           <input v-model="quickReplyEnabled" type="checkbox" class="switch-input" @change="toggleQuickReplyEnabled" />
@@ -413,7 +413,7 @@ async function toggleQuickReply(id: string) {
         </div>
         <div>
           <label class="field-label">区分大小写</label>
-          <label class="switch-row" style="margin-top: 4px;">
+          <label class="switch-row switch-row-mt-4">
             <span class="switch-label">{{ qrCaseSensitive ? '开' : '关' }}</span>
             <input v-model="qrCaseSensitive" type="checkbox" class="switch-input" />
             <span class="switch-track" :class="{ on: qrCaseSensitive }">
@@ -423,7 +423,7 @@ async function toggleQuickReply(id: string) {
         </div>
       </div>
 
-      <div class="btn-row" style="margin-top: 12px">
+      <div class="btn-row btn-row-mt-12">
         <button class="btn btn-accent" @click="addQuickReply">添加固定回复</button>
         <span v-if="qrSaved" class="msg-inline msg-success">已保存</span>
         <span v-if="qrError" class="msg-inline msg-error">{{ qrError }}</span>
@@ -431,7 +431,7 @@ async function toggleQuickReply(id: string) {
     </div>
 
     <!-- 已保存的固定回复规则列表 -->
-    <div v-if="quickReplies.length > 0" class="card" style="margin-top: 12px;">
+    <div v-if="quickReplies.length > 0" class="card card-mt-12">
       <h3 class="card-title">已有固定回复 ({{ quickReplies.length }})</h3>
       <div class="saved-list">
         <div v-for="rule in quickReplies" :key="rule.id" class="qr-item">
@@ -464,26 +464,26 @@ async function toggleQuickReply(id: string) {
       </div>
     </div>
 
-    <div class="card" style="margin-top: 12px;">
+    <div class="card card-mt-12">
       <h3 class="card-title">粉丝牌等级过滤</h3>
       <p class="card-desc">设置"匹配弹幕/AI自动回复"的最低粉丝牌等级门槛。0 表示不过滤。源弹幕仍会正常显示。</p>
       <div class="field">
         <input v-model.number="minMedalLevel" type="number" min="0" step="1" class="field-input" placeholder="0" />
       </div>
-      <div class="btn-row" style="margin-top: 8px">
+      <div class="btn-row btn-row-mt-8">
         <button class="btn btn-accent" @click="saveMinMedalLevel">保存等级过滤</button>
         <span v-if="medalSaved" class="msg-inline msg-success">已保存并生效</span>
         <span v-if="medalError" class="msg-inline msg-error">{{ medalError }}</span>
       </div>
     </div>
 
-    <div class="card" style="margin-top: 12px;">
+    <div class="card card-mt-12">
       <h3 class="card-title">忽略用户名</h3>
       <p class="card-desc">这些用户名的弹幕会正常显示，但不会进入 AI 自动回复队列（用于避免机器人自回复死循环）。支持换行或逗号分隔。</p>
       <div class="field">
         <textarea v-model="ignoreUsersText" class="field-input" rows="4" placeholder="例如：\n我的直播昵称\n机器人账号"></textarea>
       </div>
-      <div class="btn-row" style="margin-top: 8px">
+      <div class="btn-row btn-row-mt-8">
         <button class="btn btn-accent" @click="saveIgnoreUsers">保存忽略列表</button>
         <span v-if="ignoreSaved" class="msg-inline msg-success">已保存</span>
         <span v-if="ignoreError" class="msg-inline msg-error">{{ ignoreError }}</span>
@@ -494,181 +494,4 @@ async function toggleQuickReply(id: string) {
 
 <style scoped>
 @import "../styles/keywords.css";
-
-.compact-check {
-  margin: 0;
-  padding: 0;
-  vertical-align: middle;
-}
-
-.field-label {
-  display: block;
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
-  font-weight: 500;
-}
-
-.field-input {
-  width: 100%;
-  padding: 6px 10px;
-  font-size: 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.field-input:focus {
-  border-color: var(--accent);
-}
-
-.field {
-  margin-bottom: 10px;
-}
-
-.field-inline-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.qr-item {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-}
-
-.qr-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.qr-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  flex: 1;
-}
-
-.qr-tag {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  white-space: nowrap;
-}
-
-.qr-tag.contains {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
-
-.qr-tag.regex {
-  background: #bb9af722;
-  color: var(--purple);
-  font-family: monospace;
-}
-
-.qr-tag.more {
-  background: var(--bg-primary);
-  color: var(--text-muted);
-  border: 1px dashed var(--border);
-}
-
-.qr-tag.excludes {
-  background: #f7768e22;
-  color: #f7768e;
-}
-
-.qr-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.qr-excludes {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-}
-
-.qr-reply {
-  font-size: 12px;
-  color: var(--text-primary);
-  margin-top: 4px;
-  font-weight: 500;
-}
-
-.qr-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 3px;
-  flex-wrap: wrap;
-}
-
-.qr-cooldown {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.qr-case-sensitive {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-top: 2px;
-  display: inline-block;
-  background: var(--bg-secondary);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-}
-
-.qr-case-sensitive.active {
-  background: var(--accent-dim);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.btn-muted {
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  cursor: pointer;
-}
-
-.btn-muted:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.btn-muted:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-small {
-  padding: 2px 8px;
-  font-size: 10px;
-  border-radius: 3px;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
 </style>
