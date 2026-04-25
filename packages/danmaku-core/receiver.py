@@ -8,7 +8,6 @@ import asyncio
 import os
 import io
 import signal
-import platform
 import queue
 import threading
 import inspect
@@ -28,7 +27,6 @@ if sys.platform == "win32":
 try:
     import aiohttp
     from blivedm import BLiveClient
-    from blivedm.models.web import DanmakuMessage, GiftMessage, SuperChatMessage
     # 输出启动确认
     print(json.dumps({"jsonrpc": "2.0", "method": "system.ready", "params": {"pid": os.getpid()}}))
 except ImportError:
@@ -264,7 +262,6 @@ class _DanmakuHandler:
 
     def __init__(self, client: BilibiliDanmakuClient):
         self.client = client
-        self._danmaku_count = 0
 
     def _to_guard_title(self, guard_level: int) -> str:
         if guard_level == 1:
@@ -466,7 +463,6 @@ class _DanmakuHandler:
                 "color": 16777215,
                 "mode": 1,
             }
-            self._danmaku_count += 1
             asyncio.create_task(self.client.rpc.send_notification("danmaku.received", data))
         except Exception as e:
             log_stderr(f"[Danmaku parse error] {e}")
@@ -476,7 +472,6 @@ class _DanmakuHandler:
         data_payload = command.get("data", {})
         medal_data = self._extract_medal(command, {"medal": data_payload.get("medal_info")}, [])
         ts = int(time.time() * 1000)
-        self._danmaku_count += 1
         asyncio.create_task(self.client.rpc.send_notification("danmaku.gift", {
             "giftId": data_payload.get("giftId", 0),
             "giftName": data_payload.get("giftName", ""),
@@ -510,9 +505,6 @@ class _DanmakuHandler:
             },
             "roomId": self.client._room_id,
         }))
-
-    async def on_client_stopped(self, client, exc=None):
-        pass
 
 
 # ─── Danmaku Sender ─────────────────────────────────────────

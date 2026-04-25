@@ -10,6 +10,117 @@ import { join, dirname } from "path";
 import * as fs from "fs";
 import { logger } from "./logger";
 
+/** Windows: 仅结束“可执行路径完全匹配”的 run.exe 进程。 */
+function killRunExeByExactPathSync(executablePath: string): void {
+  const escapedPath = executablePath.replace(/'/g, "''");
+  const script = [
+    `$target = [System.IO.Path]::GetFullPath('${escapedPath}')`,
+    "$targetLower = $target.ToLowerInvariant()",
+    "Get-CimInstance Win32_Process -Filter \"Name = 'run.exe'\" |",
+    "  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath).ToLowerInvariant() -eq $targetLower) } |",
+    "  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join(" ");
+
+  try {
+    spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+  } catch {
+    // 忽略查询/权限异常，不中断主流程
+  }
+}
+
+/**
+ * Windows: 返回“可执行路径完全匹配”的 run.exe 进程数量。
+ * 返回 null 表示查询失败。
+ */
+function countRunExeByExactPathSync(executablePath: string): number | null {
+  const escapedPath = executablePath.replace(/'/g, "''");
+  const script = [
+    `$target = [System.IO.Path]::GetFullPath('${escapedPath}')`,
+    "$targetLower = $target.ToLowerInvariant()",
+    "$matches = Get-CimInstance Win32_Process -Filter \"Name = 'run.exe'\" |",
+    "  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath).ToLowerInvariant() -eq $targetLower) }",
+    "@($matches).Count",
+  ].join(" ");
+
+  try {
+    const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    });
+    const output = String(result.stdout || "").trim();
+    if (!output) return null;
+    const count = Number(output);
+    return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 兜底清理：按当前打包资源路径定位 run.exe 并清理残留。
+ * 用于退出流程 race 导致 DanmakuService 实例状态丢失时的额外保险。
+ */
+export function cleanupBundledRunExeResidualsSync(): void {
+  if (process.platform !== "win32") return;
+  const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
+  if (isDevMode) return;
+
+  try {
+    const { app } = require("electron");
+    const resourcesPath = process.resourcesPath || app.getAppPath();
+    const basePath = join(resourcesPath, "danmaku-core");
+    const runExe = join(basePath, "run.exe");
+    const runExeNested = join(basePath, "run", "run.exe");
+    if (fs.existsSync(runExe)) {
+      killRunExeByExactPathSync(runExe);
+      return;
+    }
+    if (fs.existsSync(runExeNested)) {
+      killRunExeByExactPathSync(runExeNested);
+    }
+  } catch {
+    // 不阻断退出流程
+  }
+}
+
+/**
+ * 退出清理后的残留自检：延迟 waitMs 后检查 run.exe 是否仍残留，并写日志。
+ */
+export async function verifyBundledRunExeResidualsAfterCleanup(waitMs = 1200): Promise<void> {
+  if (process.platform !== "win32") return;
+  const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
+  if (isDevMode) return;
+
+  try {
+    const { app } = require("electron");
+    const resourcesPath = process.resourcesPath || app.getAppPath();
+    const basePath = join(resourcesPath, "danmaku-core");
+    const candidates = [join(basePath, "run.exe"), join(basePath, "run", "run.exe")].filter((p) => fs.existsSync(p));
+    if (candidates.length === 0) return;
+
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+    for (const runPath of candidates) {
+      const count = countRunExeByExactPathSync(runPath);
+      if (count === null) {
+        logger.warn("[ExitCheck] run.exe residual check unavailable", { runPath, waitMs });
+        continue;
+      }
+      if (count > 0) {
+        logger.warn("[ExitCheck] run.exe residual detected", { runPath, residualCount: count, waitMs });
+      } else {
+        logger.log("[ExitCheck] run.exe residual check passed", { runPath, waitMs });
+      }
+    }
+  } catch (e) {
+    logger.warn("[ExitCheck] run.exe residual check failed", { error: String(e), waitMs });
+  }
+}
+
 // ─── Inline Types ────────────────────────────────────────────
 // 弹幕消息、礼物消息、SC 消息和关键词规则的内联类型定义。
 // 这些类型仅在本模块内部使用，跨进程传输通过 JSON 序列化。
@@ -373,23 +484,7 @@ export class DanmakuService extends EventEmitter {
    * 采用 CIM 查询 + Stop-Process，避免 taskkill /IM run.exe 误杀其他软件。
    */
   private killRunExeByExactPath(executablePath: string): void {
-    const escapedPath = executablePath.replace(/'/g, "''");
-    const script = [
-      `$target = [System.IO.Path]::GetFullPath('${escapedPath}')`,
-      "$targetLower = $target.ToLowerInvariant()",
-      "Get-CimInstance Win32_Process -Filter \"Name = 'run.exe'\" |",
-      "  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath).ToLowerInvariant() -eq $targetLower) } |",
-      "  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
-    ].join(" ");
-
-    try {
-      spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-    } catch {
-      // 忽略查询/权限异常，不中断主流程
-    }
+    killRunExeByExactPathSync(executablePath);
   }
 
   /** Windows: 按 PID 强制结束整个进程树（含子进程） */

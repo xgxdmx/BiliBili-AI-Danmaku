@@ -13,6 +13,10 @@
   <img src="https://img.shields.io/badge/License-Apache%202.0-yellow?style=flat-square" alt="License" />
 </p>
 
+<p align="center">
+  <img src="packages/electron-app/resources/工具介绍.png" alt="工具介绍" style="max-width: 100%;" />
+</p>
+
 > ⚠️ **声明**：这是一个 **Vibe Coding** 产物。大部分代码由 AI 生成，代码可能不够优雅，但——它和我有一个能跑就行。
 
 ---

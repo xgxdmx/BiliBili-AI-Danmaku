@@ -6,7 +6,6 @@ import RoomView from "./pages/RoomView.vue";
 import KeywordsView from "./pages/KeywordsView.vue";
 import ModelSettingsView from "./pages/ModelSettingsView.vue";
 import DevView from "./pages/DevView.vue";
-import SettingsView from "./pages/SettingsView.vue";
 import AboutView from "./pages/AboutView.vue";
 
 // 引入全局样式
@@ -20,7 +19,6 @@ const router = createRouter({
     { path: "/keywords", component: KeywordsView },
     { path: "/models", component: ModelSettingsView },
     { path: "/dev", component: DevView },
-    { path: "/settings", component: SettingsView },
     { path: "/about", component: AboutView },
   ],
 });

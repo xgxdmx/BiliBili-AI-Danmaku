@@ -40,11 +40,6 @@ export interface RoomConfig {
   disconnectMessage: string;
 }
 
-export interface OpenClawConfig {
-  endpoint: string;
-  token: string;
-}
-
 export interface ProviderConfig {
   modelId: string;
   apiKey: string;
@@ -99,7 +94,6 @@ export interface ConfigSchema {
   keywords: KeywordRule[];
   quickRepliesEnabled: boolean;
   quickReplies: QuickReplyRule[];
-  openClaw: OpenClawConfig;
   aiModel: AIModelConfig;
   /** 主题模式：light / dark / system */
   theme: "light" | "dark" | "system";
@@ -150,6 +144,8 @@ export interface DanmakuAPI {
   onThemeChanged: (callback: (resolved: "light" | "dark") => void) => () => void;
   /** 监听主进程发起的关闭确认请求（由渲染层展示主题化弹窗） */
   onCloseConfirmRequested: (callback: (data: { requestId: string; message: string; detail: string }) => void) => () => void;
+  /** 监听主进程退出中通知（用于展示“正在退出”提示） */
+  onAppQuitting: (callback: (data: { message: string }) => void) => () => void;
   /** 向主进程回传关闭确认结果 */
   respondCloseConfirm: (payload: { requestId: string; action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
   /** 关闭确认动作直达通道（不依赖 requestId，作为兜底） */
@@ -233,6 +229,11 @@ const api: DanmakuAPI = {
     ) => callback(data);
     ipcRenderer.on("window:closeConfirmRequested", handler);
     return () => ipcRenderer.removeListener("window:closeConfirmRequested", handler);
+  },
+  onAppQuitting: (callback) => {
+    const handler = (_event: unknown, data: { message: string }) => callback(data);
+    ipcRenderer.on("app:quitting", handler);
+    return () => ipcRenderer.removeListener("app:quitting", handler);
   },
   respondCloseConfirm: (payload) => ipcRenderer.invoke("window:closeConfirmRespond", payload),
   submitCloseConfirmAction: (payload) => ipcRenderer.invoke("window:closeConfirmAction", payload),

@@ -60,19 +60,6 @@ export function createAppShellController(context: MainAppContext) {
     if (context.getIsAppQuitting()) return;
     context.setIsAppQuitting(true);
     app.quit();
-
-    setTimeout(() => {
-      const windows = BrowserWindow.getAllWindows();
-      if (windows.length === 0) return;
-      for (const win of windows) {
-        try {
-          win.destroy();
-        } catch {
-          // 忽略销毁失败，继续退出
-        }
-      }
-      app.exit(0);
-    }, 1800).unref?.();
   };
 
   const requestCloseDecisionFromRenderer = (): void => {
@@ -90,6 +77,13 @@ export function createAppShellController(context: MainAppContext) {
       detail:
         "选择“最小化到托盘后台运行”后，弹幕接收、匹配、过滤、固定回复与 AI 回复会继续运行，可通过托盘图标恢复到前台。",
     });
+
+    // 兜底：若渲染层未回传（窗口隐藏/时序中断），自动清理 pending，避免后续点击 X 被吞。
+    setTimeout(() => {
+      if (context.getPendingCloseDecisionRequestId() === requestId) {
+        context.setPendingCloseDecisionRequestId(null);
+      }
+    }, 5000).unref?.();
   };
 
   const applyCloseDecision = (action: CloseWindowDialogAction, remember: boolean): void => {
@@ -130,7 +124,7 @@ export function createAppShellController(context: MainAppContext) {
       return;
     }
 
-    tray.setToolTip("BiliBili弹幕Claw");
+    tray.setToolTip("BiliBili AI弹幕姬");
     tray.setContextMenu(
       Menu.buildFromTemplate([
         {

@@ -41,22 +41,33 @@ const closeDialogMessage = ref("关闭窗口时你希望如何处理？");
 const closeDialogDetail = ref("");
 /** 是否记住当前选择 */
 const closeDialogRemember = ref(false);
+const closeDialogSubmitting = ref(false);
+const quittingVisible = ref(false);
+const quittingMessage = ref("正在退出程序，请稍候…");
 
 /** 向主进程提交关闭确认结果 */
 async function submitCloseDialogDecision(action: CloseDialogAction): Promise<void> {
+  if (closeDialogSubmitting.value) return;
+  closeDialogSubmitting.value = true;
+
+  // 先关 UI，避免托盘唤醒时出现“弹窗闪一下又消失”
+  const requestId = closeDialogRequestId.value;
+  const remember = closeDialogRemember.value;
+  closeDialogVisible.value = false;
+  closeDialogRequestId.value = "";
+
   try {
-    const requestId = closeDialogRequestId.value;
     if (requestId) {
       await window.danmakuAPI.respondCloseConfirm({
         requestId,
         action,
-        remember: closeDialogRemember.value,
+        remember,
       });
     } else {
       // 兜底：requestId 丢失时仍然确保按钮动作必达
       await window.danmakuAPI.submitCloseConfirmAction({
         action,
-        remember: closeDialogRemember.value,
+        remember,
       });
     }
   } catch {
@@ -64,15 +75,14 @@ async function submitCloseDialogDecision(action: CloseDialogAction): Promise<voi
     try {
       await window.danmakuAPI.submitCloseConfirmAction({
         action,
-        remember: closeDialogRemember.value,
+        remember,
       });
     } catch {
       // ignore
     }
   } finally {
-    closeDialogVisible.value = false;
-    closeDialogRequestId.value = "";
     closeDialogRemember.value = false;
+    closeDialogSubmitting.value = false;
   }
 }
 
@@ -86,6 +96,7 @@ function applyTheme(resolved: "light" | "dark"): void {
 // 启动时加载主题
 let unsubscribeThemeChanged: (() => void) | null = null;
 let unsubscribeCloseConfirmRequested: (() => void) | null = null;
+let unsubscribeAppQuitting: (() => void) | null = null;
 
 onMounted(async () => {
   try {
@@ -106,11 +117,19 @@ onMounted(async () => {
     closeDialogRemember.value = false;
     closeDialogVisible.value = true;
   }) || null;
+
+  unsubscribeAppQuitting = window.danmakuAPI?.onAppQuitting?.((data) => {
+    closeDialogVisible.value = false;
+    closeDialogRequestId.value = "";
+    quittingMessage.value = data?.message || "正在退出程序，请稍候…";
+    quittingVisible.value = true;
+  }) || null;
 });
 
 onUnmounted(() => {
   unsubscribeThemeChanged?.();
   unsubscribeCloseConfirmRequested?.();
+  unsubscribeAppQuitting?.();
 });
 
 // ─── 弹幕缓存 ──────────────────────────────────────────────
@@ -267,6 +286,15 @@ const icons: Record<string, string> = {
         </div>
       </div>
     </div>
+
+    <!-- 退出中提示 -->
+    <div v-if="quittingVisible" class="quitting-mask">
+      <div class="quitting-card">
+        <div class="quitting-spinner" aria-hidden="true"></div>
+        <h3 class="quitting-title">正在退出</h3>
+        <p class="quitting-desc">{{ quittingMessage }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -379,18 +407,24 @@ const icons: Record<string, string> = {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #00000066;
+  background: #0b10208a;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
   z-index: 9999;
   padding: 16px;
 }
 
 .close-modal-card {
   width: min(560px, calc(100vw - 32px));
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-border) 76%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 14px 36px #00000045;
+  box-shadow:
+    0 18px 44px #00000052,
+    inset 0 1px 0 #ffffff1a;
 }
 
 .close-modal-title {
@@ -425,5 +459,58 @@ const icons: Record<string, string> = {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.quitting-mask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #090f1f96;
+  backdrop-filter: blur(20px) saturate(145%);
+  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  z-index: 10000;
+}
+
+.quitting-card {
+  width: min(360px, calc(100vw - 32px));
+  background: color-mix(in srgb, var(--bg-secondary) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--glass-border) 78%, transparent);
+  backdrop-filter: blur(24px) saturate(155%);
+  -webkit-backdrop-filter: blur(24px) saturate(155%);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow:
+    0 18px 44px #00000052,
+    inset 0 1px 0 #ffffff1a;
+  text-align: center;
+}
+
+.quitting-spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  margin: 0 auto 10px;
+  animation: quitting-spin 0.8s linear infinite;
+}
+
+.quitting-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.quitting-desc {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+@keyframes quitting-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

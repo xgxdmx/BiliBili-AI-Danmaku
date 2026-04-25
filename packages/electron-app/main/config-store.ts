@@ -203,6 +203,11 @@ const configDir = getConfigDir();
 const LEGACY_ENCRYPTION_KEY = "danmuClaw-v1";
 /** 当前密钥版本标识，参与密钥派生 seed */
 const ENCRYPTION_KEY_VERSION = "v2";
+/**
+ * 密钥派生使用的稳定应用名（禁止跟随 UI 品牌名变化）。
+ * 否则仅改显示名称就会导致历史配置无法解密。
+ */
+const STABLE_KEY_APP_NAME = "bilibili-danmu-claw";
 
 // 确保目录存在
 if (!existsSync(configDir)) {
@@ -254,13 +259,16 @@ migratePackagedConfigToUserDataIfNeeded();
  * 种子 = 版本号 + 应用名 + appId + machineId + pepper，经 SHA-512 摘要。
  * 不同机器产生的密钥不同，配置文件不可跨机使用。
  */
-function deriveEncryptionKey(): string {
+function deriveEncryptionKeyWithAppName(appName: string): string {
   const machineId = getMachineId();
-  const appName = app.getName() || "danmuClaw";
   const appId = app.isPackaged ? "com.danmuclaw.app" : "com.danmuclaw.app.dev";
   const pepper = "danmuClaw::config::pepper::2026";
   const seed = `${ENCRYPTION_KEY_VERSION}|${appName}|${appId}|${machineId}|${pepper}`;
   return createHash("sha512").update(seed).digest("hex");
+}
+
+function deriveEncryptionKey(): string {
+  return deriveEncryptionKeyWithAppName(STABLE_KEY_APP_NAME);
 }
 
 /** 创建 electron-store 实例，指定加密密钥和是否清除损坏配置 */
@@ -272,6 +280,47 @@ function createConfigStore(encryptionKey: string, clearInvalidConfig: boolean): 
     defaults: schema,
     clearInvalidConfig,
   });
+}
+
+/**
+ * 将旧 store 快照写回到新 store（按当前 schema 做兜底）
+ */
+function hydrateFromSnapshot(target: Store<ConfigSchema>, snapshot: unknown): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- electron-store snapshot 为运行时动态对象
+  const snap = snapshot as any;
+  target.set("room", snap.room || schema.room);
+  target.set("credentials", snap.credentials || schema.credentials);
+  target.set("quickReplyEnabled", snap.quickReplyEnabled ?? snap.quickRepliesEnabled ?? schema.quickReplyEnabled);
+  target.set("keywords", snap.keywords || schema.keywords);
+  target.set("quickRepliesEnabled", snap.quickRepliesEnabled ?? schema.quickRepliesEnabled);
+  target.set("quickReplies", snap.quickReplies || schema.quickReplies);
+  target.set("aiModel", snap.aiModel || schema.aiModel);
+}
+
+/**
+ * 尝试将“可读取的旧 strongKey”迁移到当前稳定 strongKey。
+ */
+function tryMigrateStrongKey(fromKey: string, toKey: string): Store<ConfigSchema> | null {
+  try {
+    const sourceStore = createConfigStore(fromKey, false);
+    const snapshot = sourceStore.store;
+    const sourcePath = sourceStore.path;
+
+    try {
+      if (existsSync(sourcePath)) {
+        copyFileSync(sourcePath, `${sourcePath}.legacy.bak`);
+        unlinkSync(sourcePath);
+      }
+    } catch {
+      // 备份失败不阻塞迁移
+    }
+
+    const migratedStore = createConfigStore(toKey, true);
+    hydrateFromSnapshot(migratedStore, snapshot);
+    return migratedStore;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -287,9 +336,18 @@ function initializeStore(): Store<ConfigSchema> {
     const storeWithStrongKey = createConfigStore(strongKey, false);
     void storeWithStrongKey.store;
     return storeWithStrongKey;
-  } catch (strongErr) {
-    // 强密钥打开失败，尝试迁移旧密钥
-    void strongErr;
+  } catch {
+    // 当前稳定 strongKey 打开失败，继续尝试兼容迁移
+  }
+
+  // 兼容“历史使用 app.getName() 参与派生”的 strongKey（例如仅改品牌名导致 app.getName 变化）
+  const runtimeAppName = String(app.getName() || "").trim();
+  if (runtimeAppName && runtimeAppName !== STABLE_KEY_APP_NAME) {
+    const oldStrongKey = deriveEncryptionKeyWithAppName(runtimeAppName);
+    const migratedFromOldStrong = tryMigrateStrongKey(oldStrongKey, strongKey);
+    if (migratedFromOldStrong) {
+      return migratedFromOldStrong;
+    }
   }
 
   try {
@@ -307,19 +365,10 @@ function initializeStore(): Store<ConfigSchema> {
     }
 
     const migratedStore = createConfigStore(strongKey, true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- electron-store snapshot 是无类型对象
-    const snap = snapshot as any;
-    migratedStore.set("room", snap.room || schema.room);
-    migratedStore.set("credentials", snap.credentials || schema.credentials);
-    migratedStore.set("quickReplyEnabled", snap.quickReplyEnabled ?? snap.quickRepliesEnabled ?? schema.quickReplyEnabled);
-    migratedStore.set("keywords", snap.keywords || schema.keywords);
-    migratedStore.set("quickRepliesEnabled", snap.quickRepliesEnabled ?? schema.quickRepliesEnabled);
-    migratedStore.set("quickReplies", snap.quickReplies || schema.quickReplies);
-    migratedStore.set("aiModel", snap.aiModel || schema.aiModel);
+    hydrateFromSnapshot(migratedStore, snapshot);
 
     return migratedStore;
-  } catch (legacyErr) {
-    void legacyErr;
+  } catch {
     return createConfigStore(strongKey, true);
   }
 }
@@ -505,7 +554,7 @@ export function exportConfigToFile(
     const exportPayload = {
       __meta: {
         format: "plain-v2",
-        appName: "BiliBili弹幕Claw",
+        appName: "BiliBili AI弹幕姬",
         exportedAt: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().replace("Z", "+08:00"),
         machineId: getMachineId(),
       },

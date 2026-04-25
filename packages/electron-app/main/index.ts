@@ -10,7 +10,11 @@
 
 import { app, BrowserWindow, ipcMain, Menu, Tray } from "electron";
 import { join } from "path";
-import { DanmakuService } from "./danmaku-service";
+import {
+  DanmakuService,
+  cleanupBundledRunExeResidualsSync,
+  verifyBundledRunExeResidualsAfterCleanup,
+} from "./danmaku-service";
 import { getConfig, setConfigPath, type CloseWindowBehavior } from "./config-store";
 import { AIRelayManager, type AIRelayStatus } from "./ai-relay";
 import { QuickReplyEngine } from "./quick-reply-engine";
@@ -63,6 +67,10 @@ let latestAIStatus: AIRelayStatus = {
 
 /** 防止重复清理（cleanupBeforeExit 可能被多个退出信号同时触发） */
 let isCleanupRunning = false;
+/** 是否允许本次 quit 直接放行（清理完成后置 true） */
+let allowNativeQuit = false;
+/** 退出栅栏 Promise（确保只执行一次） */
+let quitBarrierPromise: Promise<void> | null = null;
 
 const appContext: MainAppContext = {
   getMainWindow: () => mainWindow,
@@ -125,8 +133,15 @@ async function cleanupBeforeExit(): Promise<void> {
         await danmakuService.stop();
       } catch (e) {
         console.error("Error stopping danmaku service:", e);
+      } finally {
+        // 退出阶段释放服务引用，阻断晚到的 start IPC 复用已停止实例
+        danmakuService = null;
       }
     }
+    // 兜底再清理一次 run.exe，覆盖退出流程 race 或实例状态丢失场景
+    cleanupBundledRunExeResidualsSync();
+    // 退出后 1s 再检测一次是否仍有 run.exe 残留，并上报日志（不阻塞退出流程）
+    void verifyBundledRunExeResidualsAfterCleanup(1000);
     aiRelay?.disconnect();
 
     // 退出时清理部分 Electron 运行缓存，减少 Roaming 目录冗余文件
@@ -149,6 +164,30 @@ async function cleanupBeforeExit(): Promise<void> {
   }
 }
 
+/**
+ * 单一退出栅栏：只执行一次清理，清理完成后再放行 Electron 退出。
+ */
+function runQuitBarrier(): Promise<void> {
+  if (quitBarrierPromise) return quitBarrierPromise;
+  isAppQuitting = true;
+
+  mainWindow?.webContents.send("app:quitting", {
+    message: "正在退出程序，请稍候…",
+  });
+
+  quitBarrierPromise = (async () => {
+    await cleanupBeforeExit();
+    allowNativeQuit = true;
+    app.quit();
+  })().catch((e) => {
+    console.error("[Main] quit barrier failed:", e);
+    allowNativeQuit = true;
+    app.exit(1);
+  });
+
+  return quitBarrierPromise;
+}
+
 /** 创建主 BrowserWindow，配置预加载脚本和安全策略 */
 function createWindow(): void {
   logger.log("Creating window, dev:", logger.isDev);
@@ -158,7 +197,7 @@ function createWindow(): void {
     height: 700,
     minWidth: 700,
     minHeight: 500,
-    title: "BiliBili弹幕Claw",
+    title: "BiliBili AI弹幕姬",
     icon: getAppIconPath(),
     frame: true,
     backgroundColor: "#1a1b26",
@@ -204,6 +243,14 @@ function createWindow(): void {
     if (isAppQuitting) return;
     event.preventDefault();
     void appShell.handleMainWindowCloseRequest();
+  });
+
+  // 标题栏“最小化”按钮：直接最小化到托盘后台运行（若托盘可用）。
+  mainWindow.on("minimize", (event) => {
+    if (isAppQuitting) return;
+    if (!appTray) return; // 托盘初始化失败时保持系统默认最小化行为
+    event.preventDefault();
+    mainWindow?.hide();
   });
 }
 
@@ -266,6 +313,13 @@ function registerIpcHandlers(): void {
 
   /** 启动弹幕监听：创建 DanmakuService 并绑定全部事件处理器 */
   ipcMain.handle("danmaku:start", async (_event, config) => {
+    if (isAppQuitting || isCleanupRunning) {
+      return {
+        status: "error",
+        message: "应用正在退出，已拒绝新的启动请求",
+      };
+    }
+
     if (!danmakuService) {
       danmakuService = new DanmakuService();
 danmakuService.on("danmaku", (data) => {
@@ -440,6 +494,7 @@ if (!gotTheLock) {
 } else {
   // 已有实例收到第二个实例的启动请求 → 聚焦/恢复主窗口
   app.on("second-instance", () => {
+    if (isAppQuitting || isCleanupRunning) return;
     const win = mainWindow;
     if (!win || win.isDestroyed()) {
       // 窗口不存在（可能被关到托盘后窗口已销毁），重新创建
@@ -467,42 +522,41 @@ if (!gotTheLock) {
   });
 
   /** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */
-  app.on("window-all-closed", async () => {
-    await cleanupBeforeExit();
-    // 若是主动退出流程，直接结束；否则保持历史行为尝试退出应用
-    if (isAppQuitting) {
-      app.exit(0);
-      return;
-    }
-    appShell.requestAppQuit();
+  app.on("window-all-closed", () => {
+    if (allowNativeQuit) return;
+    void runQuitBarrier();
   });
 
   /** 退出前清理（防止资源泄露） */
-  app.on("before-quit", async () => {
-    isAppQuitting = true;
-    await cleanupBeforeExit();
+  app.on("before-quit", (event) => {
+    if (allowNativeQuit) return;
+    event.preventDefault();
+    void runQuitBarrier();
   });
 
   /** 进程信号处理（Ctrl+C / kill） */
   process.on("SIGINT", () => {
-    isAppQuitting = true;
-    void cleanupBeforeExit().finally(() => process.exit(0));
+    void runQuitBarrier().finally(() => process.exit(0));
   });
 
   process.on("SIGTERM", () => {
-    isAppQuitting = true;
-    void cleanupBeforeExit().finally(() => process.exit(0));
+    void runQuitBarrier().finally(() => process.exit(0));
+  });
+
+  // Node 进程退出前的最后兜底（同步）
+  process.on("exit", () => {
+    cleanupBundledRunExeResidualsSync();
   });
 
   /** 未捕获异常 → 记录日志 → 清理 → 非零退出 */
   process.on("uncaughtException", (err) => {
     console.error("[Main] uncaughtException:", err);
-    isAppQuitting = true;
-    void cleanupBeforeExit().finally(() => process.exit(1));
+    void runQuitBarrier().finally(() => process.exit(1));
   });
 
   /** macOS dock 点击事件：无窗口时重新创建 */
   app.on("activate", () => {
+    if (isAppQuitting || isCleanupRunning) return;
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
