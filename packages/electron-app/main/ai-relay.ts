@@ -155,7 +155,18 @@ function normalizeAnyText(value: unknown): string | null {
   }
   if (value && typeof value === "object") {
     const obj = value as Record<string, unknown>;
-    for (const candidate of [obj.text, obj.output_text, obj.content, obj.value]) {
+    for (const candidate of [
+      obj.text,
+      obj.output_text,
+      obj.content,
+      obj.value,
+      obj.message,
+      obj.delta,
+      obj.parts,
+      obj.result,
+      obj.response,
+      obj.completion,
+    ]) {
       const t = normalizeAnyText(candidate);
       if (t) return t;
     }
@@ -202,6 +213,11 @@ function extractReplyText(data: AIResponseData, provider: string): string | null
     normalizeAnyText(data?.choices?.[0]?.text),
     normalizeAnyText(data?.output_text),
     normalizeAnyText(data?.response?.output_text),
+    normalizeAnyText(data?.message?.content),
+    normalizeAnyText(data?.response?.content),
+    normalizeAnyText(data?.completion),
+    normalizeAnyText(data?.result?.output_text),
+    normalizeAnyText(data?.result?.content),
   ];
   for (const fb of fallbacks) {
     if (fb) return fb;
@@ -214,7 +230,7 @@ function extractReplyText(data: AIResponseData, provider: string): string | null
     if (text) return text;
   }
 
-  return normalizeAnyText(data?.content);
+  return normalizeAnyText(data?.content) || extractAnthropicText(data);
 }
 
 function extractAnthropicText(data: AIResponseData): string | null {
@@ -605,7 +621,9 @@ export class AIRelayManager extends EventEmitter {
       const rawResponse = await this.askModelRaw(config, "连接握手测试：请仅回复「已就绪」。");
       const replyText = extractReplyText(rawResponse, config.provider);
       if (!replyText) {
-        throw new Error(`握手失败：模型未返回有效回复`);
+        const preview = responsePreview(rawResponse);
+        const shortPreview = preview.length > 280 ? `${preview.slice(0, 280)}...` : preview;
+        throw new Error(`握手失败：模型未返回有效回复（响应预览: ${shortPreview}）`);
       }
     }
   }
