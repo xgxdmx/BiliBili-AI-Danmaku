@@ -1,0 +1,20 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景圆 -->
+  <circle cx="128" cy="128" r="120" fill="#1a1b26"/>
+  
+  <!-- 星芒核心 -->
+  <path d="M128 48 L140 100 L198 98 L150 132 L168 188 L128 152 L88 188 L106 132 L58 98 L116 100 Z" fill="#7aa2f7"/>
+  
+  <!-- 外圈光晕 -->
+  <circle cx="128" cy="128" r="100" stroke="#7dcfff" stroke-width="3" fill="none" opacity="0.6"/>
+  
+  <!-- 流星轨迹 -->
+  <path d="M80 180 Q100 160 128 170 T170 150" stroke="#bb9af7" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M90 195 Q110 175 138 185 T180 165" stroke="#ff9e64" stroke-width="3" stroke-linecap="round" fill="none"/>
+  
+  <!-- 星光点缀 -->
+  <circle cx="70" cy="90" r="4" fill="#7dcfff"/>
+  <circle cx="190" cy="70" r="3" fill="#bb9af7"/>
+  <circle cx="200" cy="180" r="4" fill="#ff9e64"/>
+  <circle cx="60" cy="160" r="3" fill="#9ece6a"/>
+</svg>

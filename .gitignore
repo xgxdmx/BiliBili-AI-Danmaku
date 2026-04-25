@@ -18,18 +18,15 @@ node_modules/
 **/out/
 *.tsbuildinfo
 
-# PyInstaller 输出
-.build/
-build/
+# PyInstaller 输出（仅根目录）
+/.build/
+/build/
 *.toc
 *.zip
 *.pkg
 *.pyz
 
-# electron-app 构建目录
-packages/electron-app/build/
-
-# danmaku-core 构建目录
+# danmaku-core 构建产物
 packages/danmaku-core/build/
 
 # PyInstaller EXE（根目录 dist/ 和子目录）
