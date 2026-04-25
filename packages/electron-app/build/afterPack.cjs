@@ -34,12 +34,15 @@ module.exports = async function (context) {
     return;
   }
 
-  // 在源码目录的 node_modules 中查找 rcedit 二进制。
-  // electron-builder 直接从源码 build/ 目录加载 afterPack.js，
-  // 所以 __dirname = packages/electron-app/build，只需上一级即可到达 electron-app。
+  // 查找 rcedit 二进制。
+  // 本地构建时 __dirname = packages/electron-app/build，上级即 electron-app。
+  // CI 构建时 electron-builder 从 .deploy/build/ 加载此文件，__dirname = .deploy/build/，
+  // 而 .deploy/node_modules/ 只有 prod 依赖（不含 rcedit），需回退到源码目录查找。
   const electronAppDir = path.resolve(__dirname, "..");
+  const rootDir = path.resolve(__dirname, "..", "..", "..");
   const rceditBinPaths = [
     path.join(electronAppDir, "node_modules", "rcedit", "bin", "rcedit-x64.exe"),
+    path.join(rootDir, "node_modules", "rcedit", "bin", "rcedit-x64.exe"),
   ];
   let rceditExe;
   for (const p of rceditBinPaths) {
