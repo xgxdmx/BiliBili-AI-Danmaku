@@ -40,15 +40,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: "pip"
-          cache-dependency-path: packages/danmaku-core/requirements.txt
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r packages/danmaku-core/requirements.txt
           pip install pyinstaller
-          pip show blivedm
+          pip show blivedm || echo "::warning::blivedm not installed from requirements.txt, build.mjs will retry"
 
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile

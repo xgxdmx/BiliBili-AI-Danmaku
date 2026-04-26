@@ -217,16 +217,33 @@ function clean() {
 function installPythonDeps(python) {
   logStep("Python: check dependencies");
 
-  const requirements = ["blivedm==1.1.5", "aiohttp", "brotli", "pyinstaller"];
-  const missing = requirements.filter((pkg) => !pipPackageExists(python, pkg));
+  const BLIVEMDM_SPEC = "blivedm @ git+https://github.com/xfgryujk/blivedm.git@dev";
+  const requirements = [BLIVEMDM_SPEC, "aiohttp", "brotli", "pyinstaller"];
+  const missing = requirements.filter((pkg) => {
+    if (pkg === BLIVEMDM_SPEC) return !pipPackageExists(python, "blivedm");
+    return !pipPackageExists(python, pkg);
+  });
   if (missing.length === 0) {
     logOk("All Python dependencies already installed");
     return;
   }
 
-  if (!tryRun(python, ["-m", "pip", "install", "--prefer-binary", ...missing])) {
-    logFail("Failed to install Python dependencies");
-    process.exit(1);
+  // 分两步装：blivedm 用 --no-deps 避免其子依赖版本锁定冲突，其余正常装
+  const blivedmMissing = missing.filter((pkg) => pkg === BLIVEMDM_SPEC);
+  const otherMissing = missing.filter((pkg) => pkg !== BLIVEMDM_SPEC);
+
+  if (blivedmMissing.length > 0) {
+    if (!tryRun(python, ["-m", "pip", "install", "--no-deps", "--prefer-binary", BLIVEMDM_SPEC])) {
+      logFail("Failed to install blivedm");
+      process.exit(1);
+    }
+  }
+
+  if (otherMissing.length > 0) {
+    if (!tryRun(python, ["-m", "pip", "install", "--prefer-binary", ...otherMissing])) {
+      logFail("Failed to install Python dependencies");
+      process.exit(1);
+    }
   }
 
   logOk(`Installed Python dependencies: ${missing.join(", ")}`);

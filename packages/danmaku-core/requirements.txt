@@ -1,3 +1,5 @@
-blivedm==1.1.5
+blivedm @ git+https://github.com/xfgryujk/blivedm.git@dev
 aiohttp>=3.9.0
 brotli>=1.1.0
+pure-protobuf>=3.1.2
+yarl>=1.9.3
