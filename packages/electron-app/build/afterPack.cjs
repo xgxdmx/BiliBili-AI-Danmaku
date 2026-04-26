@@ -54,10 +54,14 @@ module.exports = async function (context) {
   }
 
   // 构建 rcedit 命令行参数
+  // 版本号从 electron-app 的 package.json 动态读取，避免每次手动同步
+  const pkg = require(path.join(__dirname, "..", "package.json"));
+  const version = pkg.version;
+
   const args = [exePath];
   args.push("--set-icon", iconPath);
-  args.push("--set-file-version", "0.4.0");
-  args.push("--set-product-version", "0.4.0");
+  args.push("--set-file-version", version);
+  args.push("--set-product-version", version);
   args.push("--set-version-string", "FileDescription", "BiliBili AI弹幕姬");
   args.push("--set-version-string", "ProductName", "BiliBili AI弹幕姬");
   args.push("--set-version-string", "LegalCopyright", "Copyright © 2026 xgxdmx");
