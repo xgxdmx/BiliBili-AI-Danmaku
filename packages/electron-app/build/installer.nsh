@@ -51,7 +51,7 @@
 ; （包括默认的 $INSTDIR 清理），因此必须在这里自行处理所有清理工作。
 !macro customRemoveFiles
   ; ===== 步骤 1：询问用户是否保留配置 =====
-  MessageBox MB_ICONQUESTION|MB_YESNO "是否保留配置文件？$\r$\n$\r$\n选择[是]：仅保留配置文件（config.json 等），其余缓存与运行数据会清理。$\r$\n选择[否]：删除本程序全部数据（含配置、缓存、安装文件）。" IDYES keep_config IDNO remove_all
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_SETFOREGROUND "是否保留配置文件？$\r$\n$\r$\n选择[是]：仅保留配置文件（config.json 等），其余缓存与运行数据会清理。$\r$\n选择[否]：删除本程序全部数据（含配置、缓存、安装文件）。" IDYES keep_config IDNO remove_all
 
   ; ===== 分支：不保留配置（全部删除） =====
   remove_all:

@@ -79,4 +79,4 @@ jobs:
           gh release create "V$version" "$exe" \
             --title "BiliBili-AI-Danmaku V$version" \
             --target "${{ github.sha }}" \
-            --notes "Automated build from main ($short_sha)."
+            --notes ""
