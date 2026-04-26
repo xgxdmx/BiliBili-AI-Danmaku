@@ -2,11 +2,14 @@ name: Build Windows
 
 on:
   push:
-    branches: [test, alpha, main]
+    branches: [alpha, main]
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 env:
   CI: "true"
@@ -63,28 +66,17 @@ jobs:
           retention-days: 30
 
       - name: Publish to GitHub Release
+        if: github.ref_name == 'main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           version=$(node -p "require('./package.json').version")
-          branch="${{ github.ref_name }}"
           short_sha="${{ github.sha }}"
           short_sha="${short_sha:0:7}"
           exe=$(ls dist/*.exe | head -1)
 
-          if [ "$branch" = "main" ]; then
-            tag="v$version"
-            title="v$version"
-            prerelease=""
-          else
-            tag="v$version-$branch-$short_sha"
-            title="v$version ($branch) $short_sha"
-            prerelease="--prerelease"
-          fi
-
-          gh release create "$tag" "$exe" \
-            --title "$title" \
+          gh release create "V$version" "$exe" \
+            --title "BiliBili-AI-Danmaku V$version" \
             --target "${{ github.sha }}" \
-            --notes "Automated build from branch \`$branch\` ($short_sha)." \
-            $prerelease
+            --notes "Automated build from main ($short_sha)."
