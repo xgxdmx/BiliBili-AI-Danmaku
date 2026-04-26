@@ -61,3 +61,30 @@ jobs:
           path: dist/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          branch="${{ github.ref_name }}"
+          short_sha="${{ github.sha }}"
+          short_sha="${short_sha:0:7}"
+          exe=$(ls dist/*.exe | head -1)
+
+          if [ "$branch" = "main" ]; then
+            tag="v$version"
+            title="v$version"
+            prerelease=""
+          else
+            tag="v$version-$branch-$short_sha"
+            title="v$version ($branch) $short_sha"
+            prerelease="--prerelease"
+          fi
+
+          gh release create "$tag" "$exe" \
+            --title "$title" \
+            --target "${{ github.sha }}" \
+            --notes "Automated build from branch \`$branch\` ($short_sha)." \
+            $prerelease
