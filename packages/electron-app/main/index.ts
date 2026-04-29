@@ -213,10 +213,10 @@ function createWindow(): void {
   logger.log("Creating window, dev:", logger.isDev);
 
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
-    minWidth: 700,
-    minHeight: 500,
+    width: 1200,
+    height: 660,
+    minWidth: 1200,
+    minHeight: 660,
     title: "BiliBili AI弹幕姬",
     icon: getAppIconPath(),
     frame: true,

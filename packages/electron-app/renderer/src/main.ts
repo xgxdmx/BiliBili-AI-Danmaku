@@ -1,6 +1,7 @@
 import { createApp } from "vue";
 import { createRouter, createWebHashHistory } from "vue-router";
 import App from "./App.vue";
+import BoundaryView from "./pages/BoundaryView.vue";
 import DanmakuView from "./pages/DanmakuView.vue";
 import RoomView from "./pages/RoomView.vue";
 import KeywordsView from "./pages/KeywordsView.vue";
@@ -14,6 +15,7 @@ import "./styles/global.css";
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: "/boundary", component: BoundaryView },
     { path: "/", component: DanmakuView },
     { path: "/room", component: RoomView },
     { path: "/keywords", component: KeywordsView },
