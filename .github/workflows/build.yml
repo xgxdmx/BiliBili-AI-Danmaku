@@ -2,7 +2,7 @@ name: Build Desktop
 
 on:
   push:
-    branches: [alpha, main]
+    branches: [test, alpha, main]
 
 concurrency:
   group: build-${{ github.ref }}
