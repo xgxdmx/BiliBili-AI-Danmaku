@@ -41,6 +41,7 @@
       "target": [
         "zip"
       ],
+      "icon": "build/icon-mac.png",
       "category": "public.app-category.utilities"
     },
     "portable": {
