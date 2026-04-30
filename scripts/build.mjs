@@ -32,6 +32,7 @@ const RUNTIME_ROOT = path.join(DANMAKU_CORE, "runtime");
 const RUNTIME_DANMAKU_DIR = path.join(RUNTIME_ROOT, "danmaku");
 
 const isWin = process.platform === "win32";
+const isMac = process.platform === "darwin";
 const CYAN = "\x1b[36m";
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
@@ -170,15 +171,17 @@ function pipPackageExists(python, pkg) {
 
 /**
  * 计算 electron-builder 的目标参数。
- * 当前流程以 Windows 为主，非 Windows 默认走 Linux AppImage。
+ * 当前流程：Windows -> NSIS，macOS -> dmg/zip，Linux -> AppImage。
  */
 function getElectronBuilderTarget() {
   if (isWin) return ["--win", "nsis"];
+  if (isMac) return ["--mac", "dmg", "zip"];
   return ["--linux", "AppImage"];
 }
 
 function getPlatformLabel() {
   if (isWin) return "Windows";
+  if (isMac) return "macOS";
   return "Linux";
 }
 
