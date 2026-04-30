@@ -42,7 +42,6 @@
         "dmg",
         "zip"
       ],
-      "icon": "resources/icon.ico",
       "category": "public.app-category.utilities"
     },
     "portable": {

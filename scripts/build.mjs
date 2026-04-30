@@ -86,6 +86,23 @@ function run(cmd, args, options = {}) {
   }
   if (result.status !== 0) {
     const code = result.status ?? 1;
+    const logsDir = path.join(ROOT, ".build", "logs");
+    ensureDir(logsDir);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const logFile = path.join(logsDir, `failed-${stamp}.log`);
+    const content = [
+      `command: ${[cmd, ...args].join(" ")}`,
+      `cwd: ${cwd}`,
+      `exitCode: ${code}`,
+      "",
+      "===== STDOUT =====",
+      result.stdout || "",
+      "",
+      "===== STDERR =====",
+      result.stderr || "",
+    ].join("\n");
+    writeFileSync(logFile, content, "utf8");
+    logFail(`Command log saved: ${logFile}`);
     throw new Error(`Command failed with exit code ${code}: ${[cmd, ...args].join(" ")}`);
   }
 }
