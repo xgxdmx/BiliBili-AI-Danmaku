@@ -425,6 +425,8 @@ async function buildElectron() {
     "electron-builder",
     "--projectDir",
     "./.deploy",
+    "--publish",
+    "never",
     ...getElectronBuilderTarget(),
   ], {
     cwd: ELECTRON_APP,
