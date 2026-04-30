@@ -14,7 +14,7 @@
     "pack": "pnpm run build && pnpm run build:installer",
     "pack:mac": "pnpm run build && pnpm run build:installer:mac",
     "build:installer": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --publish never --win nsis && node ../../scripts/finalize-electron-deploy.mjs",
-    "build:installer:mac": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --publish never --mac dmg zip && node ../../scripts/finalize-electron-deploy.mjs",
+    "build:installer:mac": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --publish never --mac zip && node ../../scripts/finalize-electron-deploy.mjs",
     "prepare-deploy": "node ../../scripts/prepare-electron-deploy.mjs"
   },
   "build": {
@@ -39,7 +39,6 @@
     },
     "mac": {
       "target": [
-        "dmg",
         "zip"
       ],
       "category": "public.app-category.utilities"

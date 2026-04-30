@@ -188,11 +188,11 @@ function pipPackageExists(python, pkg) {
 
 /**
  * 计算 electron-builder 的目标参数。
- * 当前流程：Windows -> NSIS，macOS -> dmg/zip，Linux -> AppImage。
+ * 当前流程：Windows -> NSIS，macOS -> zip，Linux -> AppImage。
  */
 function getElectronBuilderTarget() {
   if (isWin) return ["--win", "nsis"];
-  if (isMac) return ["--mac", "dmg", "zip"];
+  if (isMac) return ["--mac", "zip"];
   return ["--linux", "AppImage"];
 }
 

@@ -145,7 +145,6 @@ jobs:
         with:
           name: BiliBili-AI-Danmaku-macOS-${{ github.ref_name }}-${{ github.sha }}
           path: |
-            dist/*.dmg
             dist/*.zip
           if-no-files-found: error
           retention-days: 30
