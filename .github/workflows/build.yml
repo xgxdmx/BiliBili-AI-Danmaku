@@ -2,7 +2,7 @@ name: Build Desktop
 
 on:
   push:
-    branches: [test, alpha, main]
+    branches: [alpha, main]
 
 concurrency:
   group: build-${{ github.ref }}
@@ -90,78 +90,3 @@ jobs:
             --target "${{ github.sha }}" \
             --notes ""
 
-  build-macos:
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: .pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r packages/danmaku-core/requirements.txt
-          pip install pyinstaller
-          pip show blivedm || echo "::warning::blivedm not installed from requirements.txt, build.mjs will retry"
-
-      - name: Generate fallback mac icon
-        run: |
-          python -m pip install pillow
-          python - <<'PY'
-          from pathlib import Path
-          from PIL import Image, ImageDraw
-
-          output = Path("packages/electron-app/build/icon-mac.png")
-          output.parent.mkdir(parents=True, exist_ok=True)
-
-          img = Image.new("RGBA", (1024, 1024), (30, 136, 229, 255))
-          draw = ImageDraw.Draw(img)
-          draw.ellipse((160, 160, 864, 864), fill=(255, 255, 255, 255))
-          img.save(output)
-          print(f"Generated fallback icon: {output}")
-          PY
-
-      - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build & Package
-        run: node scripts/build.mjs all
-
-      - name: Upload build logs (macOS)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-macos-${{ github.ref_name }}-${{ github.sha }}
-          path: .build/logs/*.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: BiliBili-AI-Danmaku-macOS-${{ github.ref_name }}-${{ github.sha }}
-          path: |
-            dist/*.zip
-          if-no-files-found: error
-          retention-days: 30

@@ -86,6 +86,19 @@ export interface AIConnectionStatus {
   }>;
 }
 
+export interface AnchorProfilePayload {
+  room_id_input: number;
+  room_id_real: number;
+  anchor_uid: number;
+  anchor_name: string;
+  anchor_face: string;
+  anchor_face_data: string;
+  live_status: number;
+  room_title: string;
+  popularity: number;
+  followers: number;
+}
+
 export interface ConfigSchema {
   room: RoomConfig;
   credentials: Credentials;
@@ -162,6 +175,8 @@ export interface DanmakuAPI {
   }>;
   /** 在系统浏览器中打开链接 */
   openExternal: (url: string) => Promise<{ status: string; message?: string }>;
+  /** 查询直播间主播资料 */
+  getAnchorProfile: (roomId: number) => Promise<{ status: string; data?: AnchorProfilePayload; message?: string }>;
 }
 
 const api: DanmakuAPI = {
@@ -251,6 +266,7 @@ const api: DanmakuAPI = {
   submitCloseConfirmAction: (payload) => ipcRenderer.invoke("window:closeConfirmAction", payload),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+  getAnchorProfile: (roomId) => ipcRenderer.invoke("room:getAnchorProfile", roomId),
 };
 
 contextBridge.exposeInMainWorld("danmakuAPI", api);

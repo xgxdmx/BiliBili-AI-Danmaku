@@ -30,6 +30,36 @@ interface RoomProfile {
   roomId: number;
   popularityText: string;
   followersText: string;
+  avatar: string;
+}
+
+const DEFAULT_ROOM_PROFILE: RoomProfile = {
+  name: "BiliBili",
+  live: false,
+  roomId: 0,
+  popularityText: "0",
+  followersText: "0",
+  avatar: "",
+};
+
+let cachedRoomProfile: RoomProfile | null = null;
+let cachedRoomProfileRoomId = 0;
+
+function formatCountText(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}亿`;
+  if (value >= 10_000) return `${(value / 10_000).toFixed(1)}万`;
+  return value.toLocaleString("zh-CN");
+}
+
+function normalizeAvatarUrl(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (raw.startsWith("http://")) return raw.replace(/^http:\/\//i, "https://");
+  if (raw.startsWith("https://")) return raw;
+  if (raw.startsWith("/")) return `https:${raw}`;
+  return raw;
 }
 
 function formatTime(ts: number): string {
@@ -42,29 +72,40 @@ function inferBadgeName(d: DanmakuDisplay): string {
   return "观众";
 }
 
+function inferMedal(d: DanmakuDisplay): { name: string; level: number | null } {
+  if (d.sender?.medal?.name) {
+    const level = Number(d.sender.medal.level || 0);
+    return {
+      name: d.sender.medal.name,
+      level: level > 0 ? level : null,
+    };
+  }
+  return { name: "", level: null };
+}
+
 export function useLiveRoomDashboard() {
   const store = inject<any>("danmakuStore");
   const sourceDanmaku = (store?.source ?? ref<DanmakuDisplay[]>([])) as { value: DanmakuDisplay[] };
   const matchedDanmaku = (store?.matched ?? ref<DanmakuDisplay[]>([])) as { value: DanmakuDisplay[] };
 
-  const profile = ref<RoomProfile>({
-    name: "bilibili_Official",
-    live: true,
-    roomId: 2233,
-    popularityText: "26.6万",
-    followersText: "59.7万",
-  });
+  const profile = ref<RoomProfile>(cachedRoomProfile ? { ...cachedRoomProfile } : { ...DEFAULT_ROOM_PROFILE });
 
   const keywordRuleMap = ref<Map<string, KeywordRule>>(new Map());
   const aiStatus = ref<Awaited<ReturnType<typeof window.danmakuAPI.getAIStatus>> | null>(null);
   let offAIStatus: (() => void) | null = null;
 
-  const recentDanmaku = computed(() => sourceDanmaku.value.slice(0, 300).map((d) => ({
+  const recentDanmaku = computed(() => sourceDanmaku.value.slice(0, 300).map((d) => {
+    const medal = inferMedal(d);
+    return {
     id: d.id,
     time: formatTime(d.timestamp),
     badge: inferBadgeName(d),
+    medal: medal.name,
+    medalLevel: medal.level,
+    username: d.sender?.username || "匿名",
     content: d.content,
-  })));
+    };
+  }));
 
   const recentHits = computed(() => matchedDanmaku.value.slice(0, 5).map((d, idx) => {
     const ruleId = d.match?.rule?.id;
@@ -119,13 +160,58 @@ export function useLiveRoomDashboard() {
   ]);
 
   onMounted(async () => {
+    let connected = false;
+    let currentRoomId = 0;
     try {
       const status = await window.danmakuAPI.getStatus();
-      if (status?.roomId) {
-        profile.value.roomId = status.roomId;
+      connected = Boolean(status?.connected);
+      currentRoomId = Number(status?.roomId || 0);
+      if (connected && currentRoomId > 0) {
+        profile.value.roomId = currentRoomId;
+      } else {
+        profile.value = { ...DEFAULT_ROOM_PROFILE };
+        cachedRoomProfile = { ...DEFAULT_ROOM_PROFILE };
+        cachedRoomProfileRoomId = 0;
       }
     } catch {
-      // fallback
+      profile.value = { ...DEFAULT_ROOM_PROFILE };
+      cachedRoomProfile = { ...DEFAULT_ROOM_PROFILE };
+      cachedRoomProfileRoomId = 0;
+    }
+
+    try {
+      const canReuseCached = connected && currentRoomId > 0
+        && cachedRoomProfile
+        && cachedRoomProfileRoomId === currentRoomId
+        && cachedRoomProfile.name !== DEFAULT_ROOM_PROFILE.name;
+
+      if (canReuseCached) {
+        profile.value = { ...cachedRoomProfile! };
+      } else if (connected && profile.value.roomId > 0) {
+        const resp = await window.danmakuAPI.getAnchorProfile(profile.value.roomId);
+        if (resp?.status === "ok" && resp.data) {
+          profile.value.name = resp.data.anchor_name || profile.value.name;
+          profile.value.live = Number(resp.data.live_status || 0) === 1;
+          profile.value.roomId = Number(resp.data.room_id_real || profile.value.roomId);
+          profile.value.popularityText = formatCountText(Number(resp.data.popularity || 0));
+          profile.value.followersText = formatCountText(Number(resp.data.followers || 0));
+          const avatarDataUrl = String(resp.data.anchor_face_data || "");
+          const avatarUrl = normalizeAvatarUrl(String(resp.data.anchor_face || ""));
+          profile.value.avatar = avatarDataUrl || avatarUrl;
+          cachedRoomProfile = { ...profile.value };
+          cachedRoomProfileRoomId = currentRoomId;
+        }
+      } else {
+        profile.value = { ...DEFAULT_ROOM_PROFILE };
+        cachedRoomProfile = { ...DEFAULT_ROOM_PROFILE };
+        cachedRoomProfileRoomId = 0;
+      }
+    } catch {
+      if (!connected) {
+        profile.value = { ...DEFAULT_ROOM_PROFILE };
+        cachedRoomProfile = { ...DEFAULT_ROOM_PROFILE };
+        cachedRoomProfileRoomId = 0;
+      }
     }
 
     try {

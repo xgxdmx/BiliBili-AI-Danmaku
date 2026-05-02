@@ -33,7 +33,10 @@ const onSubmitKeywordFilter = () => {
   <div class="page boundary-page">
     <section class="dash-overview card-shell">
       <div class="room-identity metric-segment">
-        <div class="room-avatar" aria-hidden="true">🩵</div>
+        <div class="room-avatar" aria-hidden="true">
+          <img v-if="profile.avatar" :src="profile.avatar" alt="主播头像" class="room-avatar-img" />
+          <span v-else>🩵</span>
+        </div>
         <div class="room-meta">
           <div class="room-title-row">
             <h2 class="room-title">{{ profile.name }}</h2>
@@ -81,7 +84,12 @@ const onSubmitKeywordFilter = () => {
         <ul class="stream-list">
           <li v-for="row in streamRows" :key="row.id" class="stream-row">
             <span class="stream-time">{{ row.time }}</span>
-            <span class="stream-badge" :class="row.badgeClass">{{ row.badge }}</span>
+            <span v-if="row.medal" class="stream-medal" :class="row.badgeClass">
+              <span class="stream-medal-name">{{ row.medal }}</span>
+              <span v-if="row.medalLevel" class="stream-medal-level">{{ row.medalLevel }}</span>
+            </span>
+            <span v-else class="stream-medal-empty" aria-hidden="true"></span>
+            <span class="stream-user">{{ row.username }}: </span>
             <span class="stream-content">{{ row.content }}</span>
           </li>
         </ul>

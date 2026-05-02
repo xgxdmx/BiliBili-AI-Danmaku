@@ -12,6 +12,7 @@ import { app, BrowserWindow, ipcMain, Menu, Tray } from "electron";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import {
   DanmakuService,
   cleanupBundledRunExeResidualsSync,
@@ -37,6 +38,138 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// ============================================================
+// DevTools 快捷键开关（需要时可手动修改）
+// true  = 允许 F12 / Ctrl+Shift+I / Cmd+Opt+I 打开控制台
+// false = 禁用上述快捷键
+// 如需关闭，直接把 true 改成 false 即可。
+// ============================================================
+const ENABLE_DEVTOOLS_SHORTCUT = true;
+
+interface AnchorProfilePayload {
+  room_id_input: number;
+  room_id_real: number;
+  anchor_uid: number;
+  anchor_name: string;
+  anchor_face: string;
+  anchor_face_data: string;
+  live_status: number;
+  room_title: string;
+  popularity: number;
+  followers: number;
+}
+
+function resolveDanmakuCoreDir(): string {
+  const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
+  if (isDevMode) {
+    return join(__dirname, "..", "..", "..", "..", "packages", "danmaku-core");
+  }
+  const resourcesPath = process.resourcesPath || app.getAppPath();
+  return join(resourcesPath, "danmaku-core");
+}
+
+function resolvePythonPath(): string {
+  const isWin = process.platform === "win32";
+  const venvPython = isWin
+    ? join(__dirname, "..", "..", "..", "..", ".venv", "Scripts", "python.exe")
+    : join(__dirname, "..", "..", "..", "..", ".venv", "bin", "python");
+  if (existsSync(venvPython)) return venvPython;
+  return isWin ? "python" : "python3";
+}
+
+function resolveDanmakuRuntimePath(): string | null {
+  const base = resolveDanmakuCoreDir();
+  const isWin = process.platform === "win32";
+  const candidates = isWin
+    ? [
+        join(base, "danmaku.exe"),
+        join(base, "danmaku", "danmaku.exe"),
+        join(base, "run.exe"),
+        join(base, "run", "run.exe"),
+      ]
+    : [
+        join(base, "danmaku"),
+        join(base, "danmaku", "danmaku"),
+        join(base, "run"),
+        join(base, "run", "run"),
+      ];
+  return candidates.find((p) => existsSync(p)) || null;
+}
+
+function resolveAnchorScriptPath(): string {
+  const base = resolveDanmakuCoreDir();
+  const candidates = [
+    join(base, "bilibili_core_api.py"),
+  ];
+  return candidates.find((p) => existsSync(p)) || candidates[0];
+}
+
+async function fetchAnchorProfileByPython(roomId: number): Promise<AnchorProfilePayload> {
+  const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
+  const scriptPath = resolveAnchorScriptPath();
+  const pythonPath = resolvePythonPath();
+  const runtimePath = resolveDanmakuRuntimePath();
+  const credentials = getConfig().credentials;
+
+  const command = !isDevMode && runtimePath ? runtimePath : pythonPath;
+  const args = !isDevMode && runtimePath
+    ? ["anchor", String(roomId)]
+    : ["-X", "utf8", scriptPath, String(roomId)];
+  if (credentials?.sessdata) args.push("--sessdata", credentials.sessdata);
+  if (credentials?.biliJct) args.push("--bili-jct", credentials.biliJct);
+  if (credentials?.buvid3) args.push("--buvid3", credentials.buvid3);
+
+  return await new Promise<AnchorProfilePayload>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1" },
+    });
+    anchorProfileChildren.add(child);
+
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      forceKillChildProcessTree(child);
+      anchorProfileChildren.delete(child);
+      reject(new Error("主播信息查询超时"));
+    }, 15000);
+
+    child.stdout?.on("data", (buf: Buffer) => {
+      stdout += buf.toString("utf-8");
+    });
+    child.stderr?.on("data", (buf: Buffer) => {
+      stderr += buf.toString("utf-8");
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      anchorProfileChildren.delete(child);
+      reject(err);
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      anchorProfileChildren.delete(child);
+      if (code !== 0) {
+        reject(new Error(`主播信息脚本退出异常(code=${code}): ${stderr.trim() || "unknown error"}`));
+        return;
+      }
+      const text = stdout.trim();
+      if (!text) {
+        reject(new Error("主播信息脚本无输出"));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(text) as AnchorProfilePayload;
+        resolve(parsed);
+      } catch (e) {
+        reject(new Error(`主播信息解析失败: ${String(e)} | output=${text}`));
+      }
+    });
+  });
+}
 
 function resolvePreloadScriptPath(): string {
   const candidates = [
@@ -66,6 +199,8 @@ let appTray: Tray | null = null;
 let isAppQuitting = false;
 /** 当前关闭确认请求 ID */
 let pendingCloseDecisionRequestId: string | null = null;
+/** 主播资料查询临时子进程集合（退出时兜底清理） */
+const anchorProfileChildren = new Set<ChildProcess>();
 
 /** AI 连接状态缓存（窗口未创建时 IPC 仍可返回） */
 let latestAIStatus: AIRelayStatus = {
@@ -179,8 +314,38 @@ async function cleanupBeforeExit(): Promise<void> {
       appTray.destroy();
       appTray = null;
     }
+
+    // 兜底：清理主播资料查询临时子进程，避免退出后残留
+    for (const child of anchorProfileChildren) {
+      forceKillChildProcessTree(child);
+    }
+    anchorProfileChildren.clear();
   } finally {
     isCleanupRunning = false;
+  }
+}
+
+/** 强制结束子进程（Windows 下结束整棵进程树） */
+function forceKillChildProcessTree(child: ChildProcess): void {
+  const pid = child.pid;
+  if (!pid) return;
+
+  if (process.platform === "win32") {
+    try {
+      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      return;
+    } catch {
+      // 回退到普通 kill
+    }
+  }
+
+  try {
+    child.kill("SIGKILL");
+  } catch {
+    // ignore
   }
 }
 
@@ -246,11 +411,18 @@ function createWindow(): void {
     console.error("[Main] Renderer process gone:", details.reason);
   });
 
-  // 禁用开发者工具快捷键（F12 / Ctrl+Shift+I / Cmd+Opt+I）
+  // 按开关控制开发者工具快捷键（F12 / Ctrl+Shift+I / Cmd+Opt+I）
   mainWindow.webContents.on("before-input-event", (event, input) => {
     const isF12 = input.key === "F12";
     const isToggleDevtoolsCombo =
       (input.control || input.meta) && input.shift && input.key.toUpperCase() === "I";
+
+    if (ENABLE_DEVTOOLS_SHORTCUT && input.type === "keyDown" && (isF12 || isToggleDevtoolsCombo)) {
+      event.preventDefault();
+      mainWindow?.webContents.toggleDevTools();
+      return;
+    }
+
     if (isF12 || isToggleDevtoolsCombo) {
       event.preventDefault();
     }
@@ -456,6 +628,20 @@ function registerIpcHandlers(): void {
   ipcMain.handle("danmaku:getStatus", async () => {
     if (!danmakuService) return { connected: false, roomId: null };
     return danmakuService.getStatus();
+  });
+
+  /** 查询直播间主播资料（独立 Python 脚本，不影响现有弹幕链路） */
+  ipcMain.handle("room:getAnchorProfile", async (_event, roomId: number) => {
+    const normalizedRoomId = Math.max(0, Number(roomId || 0));
+    if (!normalizedRoomId) {
+      return { status: "error", message: "roomId 无效" };
+    }
+    try {
+      const data = await fetchAnchorProfileByPython(normalizedRoomId);
+      return { status: "ok", data };
+    } catch (e) {
+      return { status: "error", message: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   // ─── 关键词 & 固定回复 IPC ─────────────────────────────────

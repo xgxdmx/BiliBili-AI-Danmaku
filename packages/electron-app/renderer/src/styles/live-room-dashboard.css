@@ -1,7 +1,7 @@
 .boundary-page {
   display: grid;
   gap: 10px;
-  padding: 10px;
+  padding: 10px 10px 18px;
   background: transparent;
   min-height: 100%;
   align-content: start;
@@ -17,8 +17,8 @@
 /* 顶部总览：默认窗口优先（不使用 transform 缩放） */
 .dash-overview {
   display: grid;
-  grid-template-columns: minmax(340px, 1.45fr) minmax(520px, 2.55fr);
-  min-height: 98px;
+  grid-template-columns: minmax(380px, 1.75fr) minmax(500px, 2.25fr);
+  min-height: 84px;
 }
 
 .metric-segment {
@@ -28,19 +28,27 @@
 .room-identity {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px;
 }
 
 .room-avatar {
-  width: 56px;
-  height: 56px;
+  width: 50px;
+  height: 50px;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  font-size: 18px;
+  font-size: 16px;
   background: linear-gradient(145deg, #b6dbff, #90bff8);
-  flex: 0 0 56px;
+  flex: 0 0 50px;
+  overflow: hidden;
+}
+
+.room-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .room-meta {
@@ -50,8 +58,8 @@
 .room-title-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
 .room-title {
@@ -76,25 +84,28 @@
 
 .room-subline {
   margin: 0;
-  font-size: clamp(11px, 0.74vw, 14px);
+  font-size: clamp(9px, 0.62vw, 12px);
   color: #64729f;
-  line-height: 1.2;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .dot {
-  margin: 0 6px;
+  margin: 0 4px;
 }
 
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-left: 20px;
 }
 
 .metric-item {
-  padding: 8px 10px;
+  padding: 2px 4px;
   display: grid;
   align-content: center;
   border-right: 1px solid var(--border-color);
+  min-width: 0;
 }
 
 .metric-item:last-child {
@@ -102,16 +113,19 @@
 }
 
 .metric-label {
-  font-size: clamp(10px, 0.68vw, 12px);
+  font-size: clamp(8px, 0.56vw, 10px);
   color: #7182aa;
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 1px;
 }
 
 .metric-value {
-  font-size: clamp(16px, 1.08vw, 22px);
+  font-size: clamp(13px, 0.85vw, 17px);
   line-height: 1;
   font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tone-blue { color: #2c7cff; }
@@ -133,9 +147,10 @@
 }
 
 .stream-card {
-  display: flex;
-  flex-direction: column;
-  height: clamp(420px, 56vh, 620px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  height: clamp(500px, 68vh, 760px);
+  min-height: 500px;
   overflow: hidden;
 }
 
@@ -194,10 +209,10 @@
 .pill.control {
   border: none;
   cursor: pointer;
-  min-width: 34px;
-  min-height: 28px;
+  min-width: 32px;
+  min-height: 26px;
   justify-content: center;
-  padding: 2px 8px;
+  padding: 2px 7px;
   font-size: 11px;
   line-height: 1;
   transition: background-color 0.18s ease, color 0.18s ease;
@@ -209,11 +224,11 @@
 }
 
 .control-icon.is-play {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .control-icon.is-pause {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .pill.control.is-paused {
@@ -248,9 +263,9 @@
 
 .stream-list {
   height: auto;
-  overflow-y: scroll;
+  overflow-y: auto;
   overflow-x: hidden;
-  flex: 1;
+  max-height: 100%;
   min-height: 0;
 }
 
@@ -273,10 +288,15 @@
 
 .stream-row {
   display: grid;
-  grid-template-columns: 64px 64px 1fr;
-  gap: 8px;
-  align-items: center;
+  grid-template-columns: 60px 58px max-content minmax(0, 1fr);
+  column-gap: 0.45em;
+  row-gap: 4px;
+  align-items: start;
   padding: 4px 0;
+}
+
+.stream-content {
+  margin-left: 0;
 }
 
 .stream-time {
@@ -286,33 +306,80 @@
   white-space: nowrap;
 }
 
-.stream-badge {
+.stream-medal {
   justify-self: start;
   display: inline-flex;
   align-items: center;
+  gap: 2px;
   height: 20px;
-  padding: 0 8px;
+  padding: 0 11px 0 9px;
   border-radius: 7px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.stream-badge.pink { background: #f85aa1; }
-.stream-badge.blue { background: #5b79ff; }
-.stream-badge.indigo { background: #6c7dff; }
-.stream-badge.violet { background: #bf79ff; }
-.stream-badge.amber { background: #f3b23d; }
+.stream-medal-name {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+.stream-medal-level {
+  display: inline;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.95;
+  background: transparent;
+}
+
+.stream-medal-empty {
+  width: 0;
+  min-width: 0;
+  height: 20px;
+}
+
+.stream-medal.pink { background: #f85aa1; color: #fff; }
+.stream-medal.blue { background: #5b79ff; color: #fff; }
+.stream-medal.indigo { background: #6c7dff; color: #fff; }
+.stream-medal.violet { background: #bf79ff; color: #fff; }
+.stream-medal.amber { background: #f3b23d; color: #fff; }
+
+.stream-user {
+  color: #b8c7f2;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
 
 .stream-content {
   font-size: clamp(12px, 0.8vw, 14px);
-  color: #243458;
+  color: #d5e0ff;
   font-weight: 700;
   line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+[data-theme="light"] .stream-user {
+  color: #4d5f8e;
+}
+
+[data-theme="light"] .stream-content {
+  color: #243458;
 }
 
 .stream-toolbar {
-  margin-top: 6px;
+  margin-top: 0;
   padding-top: 8px;
   display: grid;
   grid-template-columns: 1fr auto 34px;
@@ -321,7 +388,7 @@
 }
 
 .stream-separator {
-  margin-top: 8px;
+  margin-top: 6px;
   height: 1px;
   min-height: 1px;
   background: linear-gradient(
@@ -391,8 +458,8 @@
 }
 
 .hit-list {
-  min-height: 150px;
-  max-height: 150px;
+  min-height: 210px;
+  max-height: 210px;
   overflow-y: auto;
   padding-right: 3px;
 }

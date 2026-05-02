@@ -243,7 +243,7 @@ function onMatchedWheel(e: WheelEvent) {
                 {{ d.sender.medal.name }} {{ d.sender.medal.level }}
               </span>
               <span v-if="d.sender?.guard_title" class="guard-badge">{{ d.sender.guard_title }}</span>
-              <span class="uname">{{ d.sender?.username || '匿名' }}</span>:
+              <span class="uname">{{ d.sender?.username || '匿名' }}: </span>
               <span class="dmsg">{{ d.content }}</span>
               <span class="dtime">{{ formatTime(d.timestamp) }}</span>
             </div>
