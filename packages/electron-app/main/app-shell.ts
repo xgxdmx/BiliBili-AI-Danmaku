@@ -31,7 +31,12 @@ export function getAppIconPath(): string {
         // 开发环境打包脚本偶发路径差异兜底
         join(process.resourcesPath, "build", "icon.ico"),
       ]
-    : [join(__dirname, "../../build/icon.ico")];
+    : [
+        // 开发环境统一优先使用 resources 图标，保证与打包一致
+        join(__dirname, "../../resources/icon.ico"),
+        // 兼容旧路径兜底
+        join(__dirname, "../../build/icon.ico"),
+      ];
 
   for (const p of candidates) {
     if (existsSync(p)) return p;
