@@ -270,6 +270,7 @@ let latestAIStatus: AIRelayStatus = {
 
 let cachedDashboardRoomProfile: DashboardRoomProfilePayload | null = null;
 let cachedDashboardRoomProfileRoomId = 0;
+let danmakuRuntimeWarmed = false;
 
 /**
  * 主进程统一生成 dashboard 房间资料：
@@ -851,12 +852,18 @@ if (!gotTheLock) {
 
     createWindow();
     registerIpcHandlers();
-    // 后台预热 runtime，减少安装后首次点击“开始监听”的冷启动卡顿体感。
-    setTimeout(() => {
-      warmupBundledDanmakuRuntime();
-    }, 600);
     // 托盘初始化放在 IPC 注册之后，避免托盘异常影响主流程
     appShell.ensureTray();
+  });
+
+  /** 延后预热 danmaku runtime（仅触发一次），用于降低首次连接冷启动卡顿。 */
+  ipcMain.handle("app:warmupDanmakuRuntime", async () => {
+    if (danmakuRuntimeWarmed) {
+      return { status: "ok", warmed: true, skipped: true };
+    }
+    danmakuRuntimeWarmed = true;
+    warmupBundledDanmakuRuntime();
+    return { status: "ok", warmed: true, skipped: false };
   });
 
   /** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */

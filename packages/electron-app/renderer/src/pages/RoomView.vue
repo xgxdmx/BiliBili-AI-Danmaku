@@ -162,6 +162,10 @@ let statusTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
   try {
+    // 延后预热：用户进入“直播间配置”后后台触发一次，
+    // 避免应用首启卡顿，同时降低首次连接冷启动抖动。
+    void window.danmakuAPI?.warmupDanmakuRuntime?.();
+
     const config = await window.danmakuAPI?.getConfig();
     if (config?.room) {
       if (config.room.roomId && Number(config.room.roomId) > 0) {

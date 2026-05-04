@@ -213,6 +213,8 @@ export interface DanmakuAPI {
   getAnchorProfile: (roomId: number) => Promise<{ status: string; data?: AnchorProfilePayload; message?: string }>;
   /** 获取 dashboard 组合视图模型（profile + snapshot） */
   getDashboardViewModel: () => Promise<{ status: string; data?: DashboardViewModel; message?: string }>;
+  /** 延后预热 danmaku runtime（仅首次有效） */
+  warmupDanmakuRuntime: () => Promise<{ status: string; warmed?: boolean; skipped?: boolean }>;
 }
 
 const api: DanmakuAPI = {
@@ -304,6 +306,7 @@ const api: DanmakuAPI = {
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   getAnchorProfile: (roomId) => ipcRenderer.invoke("room:getAnchorProfile", roomId),
   getDashboardViewModel: () => ipcRenderer.invoke("dashboard:getViewModel"),
+  warmupDanmakuRuntime: () => ipcRenderer.invoke("app:warmupDanmakuRuntime"),
 };
 
 contextBridge.exposeInMainWorld("danmakuAPI", api);
