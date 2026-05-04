@@ -38,6 +38,36 @@ function killBundledExeByExactPathSync(executablePath: string): void {
 }
 
 /**
+ * Windows: 异步结束“可执行路径完全匹配”的 runtime 进程。
+ * 用于连接启动前清理，避免 spawnSync 阻塞主进程导致 UI 短暂卡死。
+ */
+function killBundledExeByExactPathAsync(executablePath: string): Promise<void> {
+  const escapedPath = executablePath.replace(/'/g, "''");
+  const exeName = basename(executablePath).replace(/'/g, "''");
+  const script = [
+    `$target = [System.IO.Path]::GetFullPath('${escapedPath}')`,
+    "$targetLower = $target.ToLowerInvariant()",
+    `Get-CimInstance Win32_Process -Filter \"Name = '${exeName}'\" |`,
+    "  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath).ToLowerInvariant() -eq $targetLower) } |",
+    "  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join(" ");
+
+  return new Promise((resolve) => {
+    try {
+      const ps = spawn("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      ps.once("error", () => resolve());
+      ps.once("close", () => resolve());
+    } catch {
+      // 忽略查询/权限异常，不中断主流程
+      resolve();
+    }
+  });
+}
+
+/**
  * Windows: 返回“可执行路径完全匹配”的 danmaku.exe/run.exe 进程数量。
  * 返回 null 表示查询失败。
  */
@@ -100,6 +130,48 @@ export function cleanupBundledRunExeResidualsSync(): void {
     }
   } catch {
     // 不阻断退出流程
+  }
+}
+
+/**
+ * 打包态后台预热 Python runtime，降低“首次连接”冷启动卡顿体感。
+ * - 仅 Windows 打包态启用
+ * - 不影响业务连接链路，失败静默
+ */
+export function warmupBundledDanmakuRuntime(): void {
+  if (process.platform !== "win32") return;
+  const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
+  if (isDevMode) return;
+
+  try {
+    const resourcesPath = process.resourcesPath || electronApp.getAppPath();
+    const basePath = join(resourcesPath, "danmaku-core");
+    const candidates = [
+      join(basePath, "danmaku.exe"),
+      join(basePath, "danmaku", "danmaku.exe"),
+      join(basePath, "run.exe"),
+      join(basePath, "run", "run.exe"),
+    ];
+    const runtimePath = candidates.find((p) => fs.existsSync(p));
+    if (!runtimePath) return;
+
+    const child = spawn(runtimePath, ["__opencode_warmup__"], {
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "ignore"],
+      env: {
+        ...process.env,
+        PYTHONUTF8: "1",
+        PYTHONIOENCODING: "utf-8",
+      },
+    });
+
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch {}
+    }, 2500);
+    child.once("close", () => clearTimeout(timer));
+    child.once("error", () => clearTimeout(timer));
+  } catch {
+    // 预热失败不影响主流程
   }
 }
 
@@ -275,6 +347,8 @@ export class DanmakuService extends EventEmitter {
   }> = new Map();
   private buffer = "";
   private _connected = false;
+  private isStarting = false;
+  private startAbortRequested = false;
   /** 生命周期串行队列：确保 start/stop 不会并发互相覆盖进程引用 */
   private lifecycleQueue: Promise<void> = Promise.resolve();
 
@@ -297,6 +371,8 @@ export class DanmakuService extends EventEmitter {
    */
   async start(config: DanmakuServiceConfig): Promise<void> {
     return this.enqueueLifecycle(async () => {
+      this.isStarting = true;
+      this.startAbortRequested = false;
       // 若已有活跃子进程，先完整停止，避免 runtime 叠加
       if (this.isProcessAlive(this.process) || this._connected) {
         logger.log("DanmakuService.start detected existing process, stopping previous instance first");
@@ -309,9 +385,8 @@ export class DanmakuService extends EventEmitter {
 
       const { scriptPath, usePython, pythonPath } = this.resolveScriptPaths();
 
-      // Windows 打包态下，先按 runtime 可执行文件绝对路径清理历史残留，避免“断开后遗留孤儿进程”继续叠加。
-      // 仅在打包可执行模式启用，开发态 python danmaku.py 不做该清理。
-      this.cleanupStaleBundledRuntimeExeIfNeeded(scriptPath, usePython);
+      // 注意：连接启动阶段不做“启动前清理旧进程”，避免误杀新进程或引入竞态，
+      // 连接稳定性优先；残留进程清理仍由 stop/退出流程兜底处理。
 
       logger.log("Spawning:", usePython ? pythonPath : scriptPath, "script:", scriptPath);
       const spawned = this.spawnProcess(scriptPath, usePython, pythonPath);
@@ -320,18 +395,54 @@ export class DanmakuService extends EventEmitter {
       this.bindProcessEvents(spawned);
 
       try {
-        await this.waitForConnection();
+        if (this.startAbortRequested) {
+          throw new Error("连接已取消");
+        }
+        // 连接启动提速：仅短暂等待 ready 提示，超时后直接发起 start，
+        // 避免打包态因 ready 通知抖动导致额外长等待。
+        await this.waitForConnectionHint(1200);
+        if (this.startAbortRequested) {
+          throw new Error("连接已取消");
+        }
         await this.request("start", {
           roomId: config.roomId,
           credentials: config.credentials,
         });
+        if (this.startAbortRequested) {
+          throw new Error("连接已取消");
+        }
         this._connected = true;
       } catch (e) {
         // 启动失败时确保不会遗留子进程
         await this.stopInternal();
         throw e;
+      } finally {
+        this.isStarting = false;
       }
     });
+  }
+
+  /** 连接阶段立即取消：用于“连接中点击停止监听”场景。 */
+  abortStart(reason = "连接已取消"): void {
+    this.startAbortRequested = true;
+    this._connected = false;
+
+    // 立刻拒绝所有 pending 请求，避免 start 卡在 Timeout。
+    for (const [id, pending] of this.pendingRequests.entries()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error(reason));
+      this.pendingRequests.delete(id);
+    }
+
+    const proc = this.process;
+    if (proc) {
+      try { proc.stdin?.end(); } catch {}
+      this.forceKill(proc);
+    }
+  }
+
+  isStartInProgress(): boolean {
+    return this.isStarting;
   }
 
   /** 解析 Python 脚本和解释器路径 */
@@ -392,12 +503,22 @@ export class DanmakuService extends EventEmitter {
       if (usePython) {
         return spawn(pythonPath, ["-X", "utf8", scriptPath, "receiver"], {
           stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1" },
+          env: {
+            ...process.env,
+            PYTHONUNBUFFERED: "1",
+            PYTHONUTF8: "1",
+            PYTHONIOENCODING: "utf-8",
+          },
           windowsHide: true,
         });
       }
       return spawn(scriptPath, ["receiver"], {
         stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          PYTHONUTF8: "1",
+          PYTHONIOENCODING: "utf-8",
+        },
         windowsHide: true,
       });
     }
@@ -406,7 +527,12 @@ export class DanmakuService extends EventEmitter {
       usePython ? ["-X", "utf8", scriptPath, "receiver"] : ["receiver"],
       {
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
+        env: {
+          ...process.env,
+          PYTHONUNBUFFERED: "1",
+          PYTHONUTF8: "1",
+          PYTHONIOENCODING: "utf-8",
+        },
       },
     );
   }
@@ -430,20 +556,48 @@ export class DanmakuService extends EventEmitter {
     proc.on("close", (code) => {
       logger.log("Python process closed, code:", code);
       this._connected = false;
+      const reason = stderrData.trim()
+        ? `Python 进程已退出 (code=${code}): ${stderrData.substring(0, 500)}`
+        : `Python 进程已退出 (code=${code})`;
+
+      // 进程已退出时，立即失败所有 pending 请求，避免“假超时（Timeout:start）”。
+      for (const [id, pending] of this.pendingRequests.entries()) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error(reason));
+        this.pendingRequests.delete(id);
+      }
+
       if (code !== 0 && stderrData) {
         this.emit("error", { error: `Python 进程异常退出 (${code}): ${stderrData.substring(0, 500)}` });
       }
       this.emit("disconnected", { code });
     });
-    proc.on("error", (err) => { this.emit("error", { error: err.message }); });
+    proc.on("error", (err) => {
+      const reason = `Python 子进程错误: ${err.message}`;
+      for (const [id, pending] of this.pendingRequests.entries()) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error(reason));
+        this.pendingRequests.delete(id);
+      }
+      this.emit("error", { error: err.message });
+    });
   }
 
-  /** 等待 Python 进程上报连接就绪，最多 3 秒 */
-  private async waitForConnection(): Promise<void> {
+  /**
+   * 短等待连接提示（connected/disconnected），用于启动前“轻量探测”。
+   * 不作为硬前置条件，超时后继续执行 start 请求。
+   */
+  private async waitForConnectionHint(timeoutMs: number): Promise<void> {
     await new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(undefined), 3000);
-      this.once("connected", () => { clearTimeout(timeout); resolve(undefined); });
-      this.once("disconnected", () => { clearTimeout(timeout); resolve(undefined); });
+      const timeout = setTimeout(() => resolve(undefined), timeoutMs);
+      this.once("connected", () => {
+        clearTimeout(timeout);
+        resolve(undefined);
+      });
+      this.once("disconnected", () => {
+        clearTimeout(timeout);
+        resolve(undefined);
+      });
     });
   }
 
@@ -503,20 +657,21 @@ export class DanmakuService extends EventEmitter {
    * Windows 打包态：启动前清理历史 runtime 残留（按绝对路径匹配），避免多实例叠加。
    * 只清理当前应用打包出来的 danmaku-core/danmaku.exe（及历史 run.exe），不影响系统其他同名进程。
    */
-  private cleanupStaleBundledRuntimeExeIfNeeded(scriptPath: string, usePython: boolean): void {
+  private async cleanupStaleBundledRuntimeExeIfNeeded(scriptPath: string, usePython: boolean): Promise<void> {
     if (process.platform !== "win32") return;
     if (usePython) return;
     const normalizedName = scriptPath.replace(/\\/g, "/").toLowerCase();
     if (!normalizedName.endsWith("/danmaku.exe") && !normalizedName.endsWith("/run.exe")) return;
-    this.killBundledExeByExactPath(scriptPath);
+    await this.killBundledExeByExactPath(scriptPath);
   }
 
   /**
    * Windows: 仅结束“可执行路径完全匹配”的 runtime 进程。
    * 采用 CIM 查询 + Stop-Process，避免 taskkill /IM * 误杀其他软件。
    */
-  private killBundledExeByExactPath(executablePath: string): void {
-    killBundledExeByExactPathSync(executablePath);
+  private async killBundledExeByExactPath(executablePath: string): Promise<void> {
+    // 连接启动阶段采用异步清理，避免同步阻塞主线程导致“点击连接后卡几秒”。
+    await killBundledExeByExactPathAsync(executablePath);
   }
 
   /** Windows: 按 PID 强制结束整个进程树（含子进程） */
@@ -665,14 +820,26 @@ this._connected = true;
    * 超时 30 秒后自动 reject 并清理 pending 条目。
    */
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (!this.isProcessAlive(this.process)) {
+      throw new Error(`Python 进程未运行，无法执行请求: ${method}`);
+    }
+
     const id = randomUUID();
     return new Promise((resolve, reject) => {
+      const timeoutMs = method === "start" ? 90000 : 30000;
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
         reject(new Error(`Timeout: ${method}`));
-      }, 30000);
+      }, timeoutMs);
       
       this.pendingRequests.set(id, { resolve, reject, timeout });
+      const ok = this.process?.stdin?.writable;
+      if (!ok) {
+        clearTimeout(timeout);
+        this.pendingRequests.delete(id);
+        reject(new Error(`Python stdin 不可写，无法执行请求: ${method}`));
+        return;
+      }
       this.process?.stdin?.write(JSON.stringify({ id, method, params }) + "\n");
     });
   }

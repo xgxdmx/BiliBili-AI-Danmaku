@@ -242,7 +242,13 @@ async function handleConnect() {
     isConnected.value = true;
     currentRoomId.value = Number(form.roomId);
   } catch (e: any) {
-    errorMsg.value = e?.message || "连接失败";
+    const message = String(e?.message || "连接失败");
+    if (message.includes("连接已取消") || message.includes("用户取消连接")) {
+      statusMsg.value = "已取消连接";
+      errorMsg.value = "";
+    } else {
+      errorMsg.value = message;
+    }
   } finally {
     isConnecting.value = false;
   }
@@ -251,12 +257,14 @@ async function handleConnect() {
 async function handleDisconnect() {
   try {
     await window.danmakuAPI?.stop({
-      sendBeforeStop: sendBeforeDisconnect.value,
-      message: disconnectMessage.value,
+      cancelStart: isConnecting.value,
+      sendBeforeStop: isConnecting.value ? false : sendBeforeDisconnect.value,
+      message: isConnecting.value ? "" : disconnectMessage.value,
     });
-    statusMsg.value = "已断开"; 
+    statusMsg.value = isConnecting.value ? "已取消连接" : "已断开";
     isConnected.value = false;
     currentRoomId.value = null;
+    isConnecting.value = false;
   } catch (e: any) { errorMsg.value = e?.message || "断开失败"; }
 }
 
@@ -298,7 +306,7 @@ async function openPopupLogin() {
         <button class="btn btn-accent" :disabled="isConnecting || !isConfigured || isConnected" @click="handleConnect">
           {{ isConnecting ? "连接中..." : "开始监听" }}
         </button>
-        <button class="btn btn-muted stop-listening-btn" :disabled="!isConnected" @click="handleDisconnect">停止监听</button>
+        <button class="btn btn-muted stop-listening-btn" :disabled="!isConnected && !isConnecting" @click="handleDisconnect">{{ isConnecting ? "取消连接" : "停止监听" }}</button>
       </div>
 
       <div class="field">

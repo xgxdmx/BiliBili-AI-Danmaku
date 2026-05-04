@@ -32,6 +32,8 @@ const matchedDanmaku = store?.matched || ref<DanmakuDisplay[]>([]);
 const scheduleSave = store?.scheduleSave || (() => {});
 
 const maxLines = 500;
+const itemRowHeight = 34;
+const overscanRows = 12;
 const status = ref<ConnectionStatus>({ connected: false, roomId: null });
 const sendText = ref("");
 const sending = ref(false);
@@ -44,6 +46,8 @@ const sourceListEl = ref<HTMLElement | null>(null);
 const matchedListEl = ref<HTMLElement | null>(null);
 const sourceAutoScroll = ref(true);
 const matchedAutoScroll = ref(true);
+const sourceStartIndex = ref(0);
+const matchedStartIndex = ref(0);
 
 /* danmakuAPI type is declared globally via preload */
 
@@ -98,6 +102,24 @@ const filteredSourceList = computed(() => {
   );
 });
 
+const sourceVisibleCount = computed(() => {
+  const h = sourceListEl.value?.clientHeight || 0;
+  return Math.max(30, Math.ceil(h / itemRowHeight) + overscanRows * 2);
+});
+
+const displayedSourceList = computed(() => {
+  const start = Math.max(0, Math.min(sourceStartIndex.value, Math.max(0, filteredSourceList.value.length - 1)));
+  const end = Math.min(filteredSourceList.value.length, start + sourceVisibleCount.value);
+  return filteredSourceList.value.slice(start, end);
+});
+
+const sourceTopSpacerHeight = computed(() => Math.max(0, sourceStartIndex.value * itemRowHeight));
+const sourceBottomSpacerHeight = computed(() => {
+  const rendered = displayedSourceList.value.length;
+  const remaining = Math.max(0, filteredSourceList.value.length - sourceStartIndex.value - rendered);
+  return remaining * itemRowHeight;
+});
+
 const filteredMatchedList = computed(() => {
   if (!matchedSearchText.value) return matchedDanmaku.value;
   const q = matchedSearchText.value.toLowerCase();
@@ -108,8 +130,28 @@ const filteredMatchedList = computed(() => {
   );
 });
 
+const matchedVisibleCount = computed(() => {
+  const h = matchedListEl.value?.clientHeight || 0;
+  return Math.max(30, Math.ceil(h / itemRowHeight) + overscanRows * 2);
+});
+
+const displayedMatchedList = computed(() => {
+  const start = Math.max(0, Math.min(matchedStartIndex.value, Math.max(0, filteredMatchedList.value.length - 1)));
+  const end = Math.min(filteredMatchedList.value.length, start + matchedVisibleCount.value);
+  return filteredMatchedList.value.slice(start, end);
+});
+
+const matchedTopSpacerHeight = computed(() => Math.max(0, matchedStartIndex.value * itemRowHeight));
+const matchedBottomSpacerHeight = computed(() => {
+  const rendered = displayedMatchedList.value.length;
+  const remaining = Math.max(0, filteredMatchedList.value.length - matchedStartIndex.value - rendered);
+  return remaining * itemRowHeight;
+});
+
 const totalCount = computed(() => sourceDanmaku.value.length);
 const matchedCount = computed(() => matchedDanmaku.value.length);
+const sourceVirtualized = computed(() => filteredSourceList.value.length > displayedSourceList.value.length);
+const matchedVirtualized = computed(() => filteredMatchedList.value.length > displayedMatchedList.value.length);
 
 // 发送弹幕 - 取最近 20 条发送的弹幕 (type === 'sent')
 const recentDanmakuList = computed(() => {
@@ -189,12 +231,14 @@ function onSourceScroll() {
   if (!sourceListEl.value) return;
   const el = sourceListEl.value;
   sourceAutoScroll.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 50;
+  sourceStartIndex.value = Math.max(0, Math.floor(el.scrollTop / itemRowHeight) - overscanRows);
 }
 
 function onMatchedScroll() {
   if (!matchedListEl.value) return;
   const el = matchedListEl.value;
   matchedAutoScroll.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 50;
+  matchedStartIndex.value = Math.max(0, Math.floor(el.scrollTop / itemRowHeight) - overscanRows);
 }
 
 function onSourceWheel(e: WheelEvent) {
@@ -238,7 +282,8 @@ function onMatchedWheel(e: WheelEvent) {
             <button class="btn-clear" @click="clearSource">清空弹幕列表</button>
           </div>
           <div ref="sourceListEl" class="column-scroll" @scroll="onSourceScroll">
-            <div v-for="d in filteredSourceList" :key="d.id" :class="['d-item', { highlight: d.isHighlighted, gift: d.type === 'gift' }]">
+            <div :style="{ height: `${sourceTopSpacerHeight}px` }" aria-hidden="true"></div>
+            <div v-for="d in displayedSourceList" :key="d.id" :class="['d-item', { highlight: d.isHighlighted, gift: d.type === 'gift' }]">
               <span v-if="d.sender?.medal" class="medal" :style="{ color: medalColor(d.sender.medal.color) }">
                 {{ d.sender.medal.name }} {{ d.sender.medal.level }}
               </span>
@@ -247,7 +292,9 @@ function onMatchedWheel(e: WheelEvent) {
               <span class="dmsg">{{ d.content }}</span>
               <span class="dtime">{{ formatTime(d.timestamp) }}</span>
             </div>
-            <div v-if="filteredSourceList.length === 0" class="empty-inline">暂无弹幕</div>
+            <div :style="{ height: `${sourceBottomSpacerHeight}px` }" aria-hidden="true"></div>
+            <div v-if="displayedSourceList.length === 0" class="empty-inline">暂无弹幕</div>
+            <div v-else-if="sourceVirtualized" class="empty-inline">已启用虚拟渲染（共 {{ filteredSourceList.length }} 条）</div>
           </div>
         </div>
 
@@ -260,7 +307,8 @@ function onMatchedWheel(e: WheelEvent) {
             <button class="btn-clear" @click="clearMatched">清空弹幕列表</button>
           </div>
           <div ref="matchedListEl" class="column-scroll" @scroll="onMatchedScroll">
-            <div v-for="d in filteredMatchedList" :key="d.id" class="m-item">
+            <div :style="{ height: `${matchedTopSpacerHeight}px` }" aria-hidden="true"></div>
+            <div v-for="d in displayedMatchedList" :key="d.id" class="m-item">
               <span v-if="d.sender?.medal" class="m-badge">
                 {{ d.sender.medal.name }} {{ d.sender.medal.level }}
               </span>
@@ -269,7 +317,9 @@ function onMatchedWheel(e: WheelEvent) {
               <span class="m-content">{{ d.content }}</span>
               <span class="m-time">{{ formatTime(d.timestamp) }}</span>
             </div>
-            <div v-if="filteredMatchedList.length === 0" class="empty-inline">暂无匹配弹幕</div>
+            <div :style="{ height: `${matchedBottomSpacerHeight}px` }" aria-hidden="true"></div>
+            <div v-if="displayedMatchedList.length === 0" class="empty-inline">暂无匹配弹幕</div>
+            <div v-else-if="matchedVirtualized" class="empty-inline">已启用虚拟渲染（共 {{ filteredMatchedList.length }} 条）</div>
           </div>
         </div>
       </div>

@@ -16,6 +16,7 @@ import { spawn, spawnSync, type ChildProcess } from "child_process";
 import {
   DanmakuService,
   cleanupBundledRunExeResidualsSync,
+  warmupBundledDanmakuRuntime,
   verifyBundledRunExeResidualsAfterCleanup,
 } from "./danmaku-service";
 import { getConfig, setConfigPath, type CloseWindowBehavior } from "./config-store";
@@ -29,6 +30,7 @@ import { registerAuthIpcHandlers } from "./auth-window";
 import { registerConfigIpcHandlers } from "./config-ipc";
 import { registerAiIpcHandlers } from "./ai-ipc";
 import { registerAppUtilityIpcHandlers } from "./app-utility-ipc";
+import { createDashboardMetricsStore, type DashboardSnapshotPayload } from "./dashboard-metrics-store";
 import {
   isAiEligible,
   isQuickReplyEligible,
@@ -59,6 +61,47 @@ interface AnchorProfilePayload {
   popularity: number;
   followers: number;
 }
+
+interface DashboardRoomProfilePayload {
+  name: string;
+  live: boolean;
+  roomId: number;
+  popularityText: string;
+  followersText: string;
+  avatar: string;
+}
+
+interface DashboardViewModelPayload {
+  profile: DashboardRoomProfilePayload;
+  snapshot: DashboardSnapshotPayload;
+}
+
+const DEFAULT_DASHBOARD_ROOM_PROFILE: DashboardRoomProfilePayload = {
+  name: "BiliBili",
+  live: false,
+  roomId: 0,
+  popularityText: "0",
+  followersText: "0",
+  avatar: "",
+};
+
+function formatDashboardCountText(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}亿`;
+  if (value >= 10_000) return `${(value / 10_000).toFixed(1)}万`;
+  return value.toLocaleString("zh-CN");
+}
+
+function normalizeDashboardAvatarUrl(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (raw.startsWith("http://")) return raw.replace(/^http:\/\//i, "https://");
+  if (raw.startsWith("https://")) return raw;
+  if (raw.startsWith("/")) return `https:${raw}`;
+  return raw;
+}
+
 
 function resolveDanmakuCoreDir(): string {
   const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
@@ -124,7 +167,12 @@ async function fetchAnchorProfileByPython(roomId: number): Promise<AnchorProfile
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
-      env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1" },
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+        PYTHONUTF8: "1",
+        PYTHONIOENCODING: "utf-8",
+      },
     });
     anchorProfileChildren.add(child);
 
@@ -219,6 +267,69 @@ let latestAIStatus: AIRelayStatus = {
   maxPending: 100,
   recentDecisions: [],
 };
+
+let cachedDashboardRoomProfile: DashboardRoomProfilePayload | null = null;
+let cachedDashboardRoomProfileRoomId = 0;
+
+/**
+ * 主进程统一生成 dashboard 房间资料：
+ * - 统一 profile 字段口径，减少 renderer 侧拼装逻辑
+ * - 带 roomId 粒度缓存，避免高频重复查询主播信息
+ */
+async function buildDashboardRoomProfile(): Promise<DashboardRoomProfilePayload> {
+  const status = danmakuService?.getStatus?.() || { connected: false, roomId: null };
+  const connected = Boolean(status.connected);
+  const currentRoomId = Number(status.roomId || 0);
+
+  if (!connected || currentRoomId <= 0) {
+    cachedDashboardRoomProfile = { ...DEFAULT_DASHBOARD_ROOM_PROFILE };
+    cachedDashboardRoomProfileRoomId = 0;
+    return { ...DEFAULT_DASHBOARD_ROOM_PROFILE };
+  }
+
+  if (
+    cachedDashboardRoomProfile &&
+    cachedDashboardRoomProfileRoomId === currentRoomId &&
+    cachedDashboardRoomProfile.name !== DEFAULT_DASHBOARD_ROOM_PROFILE.name
+  ) {
+    return { ...cachedDashboardRoomProfile };
+  }
+
+  try {
+    const data = await fetchAnchorProfileByPython(currentRoomId);
+    const avatarDataUrl = String(data.anchor_face_data || "");
+    const avatarUrl = normalizeDashboardAvatarUrl(String(data.anchor_face || ""));
+
+    const profile: DashboardRoomProfilePayload = {
+      name: data.anchor_name || DEFAULT_DASHBOARD_ROOM_PROFILE.name,
+      live: Number(data.live_status || 0) === 1,
+      roomId: Number(data.room_id_real || currentRoomId),
+      popularityText: formatDashboardCountText(Number(data.popularity || 0)),
+      followersText: formatDashboardCountText(Number(data.followers || 0)),
+      avatar: avatarDataUrl || avatarUrl,
+    };
+
+    cachedDashboardRoomProfile = { ...profile };
+    cachedDashboardRoomProfileRoomId = currentRoomId;
+    return profile;
+  } catch (e) {
+    logger.warn("[Dashboard] anchor profile fetch failed, fallback to cached/default", {
+      roomId: currentRoomId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+
+    if (cachedDashboardRoomProfile && cachedDashboardRoomProfileRoomId === currentRoomId) {
+      return { ...cachedDashboardRoomProfile };
+    }
+
+    return {
+      ...DEFAULT_DASHBOARD_ROOM_PROFILE,
+      roomId: currentRoomId,
+    };
+  }
+}
+
+const dashboardMetricsStore = createDashboardMetricsStore();
 
 /** 防止重复清理（cleanupBeforeExit 可能被多个退出信号同时触发） */
 let isCleanupRunning = false;
@@ -379,9 +490,9 @@ function createWindow(): void {
 
   mainWindow = new BrowserWindow({
     width: 1200,
-    height: 660,
+    height: 670,
     minWidth: 1200,
-    minHeight: 660,
+    minHeight: 670,
     title: "BiliBili AI弹幕姬",
     icon: getAppIconPath(),
     frame: true,
@@ -517,26 +628,31 @@ function registerIpcHandlers(): void {
     if (!danmakuService) {
       danmakuService = new DanmakuService();
       danmakuService.on("danmaku", (data) => {
+          dashboardMetricsStore.ingestDanmaku(data);
           mainWindow?.webContents.send("danmaku:received", data);
           const username = data?.sender?.username || "";
           if (shouldIgnoreByUsername(username)) return;
 
          // ── 捕捉开关 ──
-         // 关闭后弹幕仅显示，不进入关键词匹配 / 固定回复 / AI 回复流程
-         if (getConfig().room?.captureEnabled === false) return;
+         // 该开关仅控制“关键词匹配/固定回复”链路，不应误伤 AI 自动回复。
+         // 关闭时：跳过关键词匹配与固定回复，但 AI 仍可接收弹幕。
+         const captureEnabled = getConfig().room?.captureEnabled !== false;
 
-          const matchScope = resolveMatchScope(data?.match?.rule?.scope);
-          const hasKeywordMatch = Boolean(data?.match);
+          const matchScope = captureEnabled
+            ? resolveMatchScope(data?.match?.rule?.scope)
+            : resolveMatchScope(undefined);
+          const hasKeywordMatch = captureEnabled ? Boolean(data?.match) : false;
           const content = data?.content || "";
-          const activeScopes =
-            danmakuService?.getKeywordFilterScopes() ?? new Set<KeywordScope>();
+          const activeScopes = captureEnabled
+            ? (danmakuService?.getKeywordFilterScopes() ?? new Set<KeywordScope>())
+            : new Set<KeywordScope>();
           const routeContext = { matchScope, hasKeywordMatch, activeScopes };
 
         // ── 固定回复路由 ──
         // scope=both/quickReply: 关键词过滤控制固定回复，只处理命中弹幕
         // scope=ai: 固定回复绕过关键词过滤，处理所有弹幕
         // 未命中弹幕：如果存在 scope=ai 关键词，固定回复也处理（绕过过滤）
-          const quickReplyEligible = isQuickReplyEligible(routeContext);
+          const quickReplyEligible = captureEnabled && isQuickReplyEligible(routeContext);
 
         // 固定回复全局开关：关闭时完全不触发固定回复
           const quickReplyEnabled = getConfig().quickReplyEnabled;
@@ -554,7 +670,7 @@ function registerIpcHandlers(): void {
         // scope=both/ai: 关键词过滤控制 AI，只处理命中弹幕
         // scope=quickReply: AI 绕过关键词过滤，处理所有弹幕
         // 未命中弹幕：如果存在 scope=quickReply 关键词，AI 也处理（绕过过滤）
-          const aiEligible = isAiEligible(routeContext);
+          const aiEligible = captureEnabled ? isAiEligible(routeContext) : true;
 
         // 固定回复优先级高于 AI：一旦命中固定回复，本条弹幕不再进入 AI 队列。
           if (!quickReplyHandled && aiEligible && aiRelay && !aiRelay.shouldIgnoreIncoming(data)) {
@@ -562,6 +678,7 @@ function registerIpcHandlers(): void {
           }
         });
       danmakuService.on("gift", (data) => {
+        dashboardMetricsStore.ingestGift(data);
         mainWindow?.webContents.send("danmaku:gift", data);
         const username = data?.sender?.username || "";
         if (aiRelay && !shouldIgnoreByUsername(username)) {
@@ -582,6 +699,7 @@ function registerIpcHandlers(): void {
         }
       });
       danmakuService.on("superchat", (data) => {
+        dashboardMetricsStore.ingestSuperChat(data);
         mainWindow?.webContents.send("danmaku:superchat", data);
       });
       danmakuService.on("connected", (data) => {
@@ -600,8 +718,13 @@ function registerIpcHandlers(): void {
   });
 
   /** 停止弹幕监听，可选在停止前发送告别消息 */
-  ipcMain.handle("danmaku:stop", async (_event, options?: { sendBeforeStop?: boolean; message?: string }) => {
+  ipcMain.handle("danmaku:stop", async (_event, options?: { sendBeforeStop?: boolean; message?: string; cancelStart?: boolean }) => {
     if (danmakuService) {
+      if (options?.cancelStart && danmakuService.isStartInProgress()) {
+        danmakuService.abortStart("用户取消连接");
+        return { status: "ok", cancelled: true };
+      }
+
       const shouldSend = Boolean(options?.sendBeforeStop);
       const message = String(options?.message || "").trim();
       if (shouldSend && message) {
@@ -628,6 +751,21 @@ function registerIpcHandlers(): void {
   ipcMain.handle("danmaku:getStatus", async () => {
     if (!danmakuService) return { connected: false, roomId: null };
     return danmakuService.getStatus();
+  });
+
+  /**
+   * Dashboard 组合视图模型：
+   * - 一次 IPC 同时返回 roomProfile + snapshot
+   * - 减少 renderer 双请求的耦合与抖动窗口
+   */
+  ipcMain.handle("dashboard:getViewModel", async (): Promise<{ status: string; data?: DashboardViewModelPayload; message?: string }> => {
+    try {
+      const profile = await buildDashboardRoomProfile();
+      const snapshot = dashboardMetricsStore.buildSnapshot(latestAIStatus);
+      return { status: "ok", data: { profile, snapshot } };
+    } catch (e) {
+      return { status: "error", message: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   /** 查询直播间主播资料（独立 Python 脚本，不影响现有弹幕链路） */
@@ -713,6 +851,10 @@ if (!gotTheLock) {
 
     createWindow();
     registerIpcHandlers();
+    // 后台预热 runtime，减少安装后首次点击“开始监听”的冷启动卡顿体感。
+    setTimeout(() => {
+      warmupBundledDanmakuRuntime();
+    }, 600);
     // 托盘初始化放在 IPC 注册之后，避免托盘异常影响主流程
     appShell.ensureTray();
   });

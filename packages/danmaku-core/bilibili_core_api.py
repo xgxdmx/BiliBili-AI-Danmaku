@@ -6,10 +6,20 @@ import argparse
 import asyncio
 import base64
 import json
+import sys
 from dataclasses import dataclass, asdict
 
 import aiohttp
 from bilibili_api import Credential, live, user
+
+
+# 强制 UTF-8 stdout，避免打包态输出中文主播名/标题时乱码。
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 @dataclass

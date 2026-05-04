@@ -12,6 +12,14 @@ import asyncio
 import json
 from dataclasses import asdict
 
+# Windows 打包态下，确保 stdout 以 UTF-8 输出，避免中文 JSON 被主进程按 utf-8 解析时乱码。
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python danmaku.py [receiver|sender|send|anchor]")
@@ -34,7 +42,8 @@ if __name__ == "__main__":
         parser.add_argument("--sessdata", "-s", required=True)
         parser.add_argument("--bili-jct", "-b", required=True)
         parser.add_argument("--color", "-c", type=int, default=16777215)
-        args = parser.parse_args()
+        # 仅解析 mode 之后的参数，避免把 "send" 自身当作位置参数
+        args = parser.parse_args(sys.argv[2:])
         result = asyncio.run(send_danmaku(args.room, args.message, args.sessdata, args.bili_jct, args.color))
         print(result)
     elif mode == "anchor":
@@ -46,7 +55,8 @@ if __name__ == "__main__":
         parser.add_argument("--sessdata", default=None)
         parser.add_argument("--bili-jct", dest="bili_jct", default=None)
         parser.add_argument("--buvid3", default=None)
-        args = parser.parse_args()
+        # 仅解析 mode 之后的参数，避免把 "anchor" 自身当作 room_id
+        args = parser.parse_args(sys.argv[2:])
 
         profile = asyncio.run(fetch_anchor_profile(
             args.room_id,

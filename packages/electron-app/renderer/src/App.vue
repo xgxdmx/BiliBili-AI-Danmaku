@@ -9,10 +9,22 @@ type CloseDialogAction = "tray" | "exit" | "cancel";
 
 // 程序关闭时清空缓存 - 启动时默认为空
 const STORAGE_KEY = "bilibili-danmaku-cache";
+const MAX_RUNTIME_LINES = 300;
+const MAX_PERSIST_LINES = 120;
+
+function clampCacheRows<T>(list: T[], max: number): T[] {
+  return Array.isArray(list) ? list.slice(0, max) : [];
+}
 
 function saveCache(source: any[], matched: any[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, matched }));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        source: clampCacheRows(source, MAX_PERSIST_LINES),
+        matched: clampCacheRows(matched, MAX_PERSIST_LINES),
+      }),
+    );
   } catch {}
 }
 
@@ -97,6 +109,10 @@ function applyTheme(resolved: "light" | "dark"): void {
 let unsubscribeThemeChanged: (() => void) | null = null;
 let unsubscribeCloseConfirmRequested: (() => void) | null = null;
 let unsubscribeAppQuitting: (() => void) | null = null;
+let unsubscribeDanmaku: (() => void) | null = null;
+let unsubscribeGift: (() => void) | null = null;
+let unsubscribeSuperChat: (() => void) | null = null;
+let beforeUnloadHandler: (() => void) | null = null;
 
 onMounted(async () => {
   try {
@@ -130,13 +146,21 @@ onUnmounted(() => {
   unsubscribeThemeChanged?.();
   unsubscribeCloseConfirmRequested?.();
   unsubscribeAppQuitting?.();
+  unsubscribeDanmaku?.();
+  unsubscribeGift?.();
+  unsubscribeSuperChat?.();
+  if (beforeUnloadHandler) {
+    window.removeEventListener("beforeunload", beforeUnloadHandler);
+    beforeUnloadHandler = null;
+  }
 });
 
 // ─── 弹幕缓存 ──────────────────────────────────────────────
 onMounted(() => {
-  window.addEventListener("beforeunload", () => {
+  beforeUnloadHandler = () => {
     saveCache(globalSourceDanmaku.value, globalMatchedDanmaku.value);
-  });
+  };
+  window.addEventListener("beforeunload", beforeUnloadHandler);
   
   const api = window.danmakuAPI;
   if (api) {
@@ -161,30 +185,30 @@ onMounted(() => {
     );
     
     // Danmaku
-    api.onDanmaku((d: any) => {
+    unsubscribeDanmaku = api.onDanmaku((d: any) => {
       // 去重
       if (isDuplicate(d)) return;
       globalSourceDanmaku.value.unshift(d);
-      if (globalSourceDanmaku.value.length > 500) globalSourceDanmaku.value.length = 500;
+      if (globalSourceDanmaku.value.length > MAX_RUNTIME_LINES) globalSourceDanmaku.value.length = MAX_RUNTIME_LINES;
       if (d.isHighlighted || d.match) {
         globalMatchedDanmaku.value.unshift(d);
-        if (globalMatchedDanmaku.value.length > 500) globalMatchedDanmaku.value.length = 500;
+        if (globalMatchedDanmaku.value.length > MAX_RUNTIME_LINES) globalMatchedDanmaku.value.length = MAX_RUNTIME_LINES;
       }
       scheduleSave();
     });
     // Gift
-    api.onGift((d: any) => {
+    unsubscribeGift = api.onGift((d: any) => {
       const sender = resolveSender(d);
       globalSourceDanmaku.value.unshift({
         id: Date.now(), content: `🎁 ${sender.username} 送出 ${d.giftName} x${d.count}`,
         sender,
         timestamp: d.timestamp || Date.now(), roomId: d.roomId || 0, color: 16761024, mode: 1, type: "gift",
       });
-      if (globalSourceDanmaku.value.length > 500) globalSourceDanmaku.value.length = 500;
+      if (globalSourceDanmaku.value.length > MAX_RUNTIME_LINES) globalSourceDanmaku.value.length = MAX_RUNTIME_LINES;
       scheduleSave();
     });
     // SuperChat
-    api.onSuperChat((d: any) => {
+    unsubscribeSuperChat = api.onSuperChat((d: any) => {
       const sender = resolveSender(d);
       globalSourceDanmaku.value.unshift({
         id: d.id || Date.now(), content: `💎 SC ¥${d.price}: ${d.content}`,
@@ -196,6 +220,8 @@ onMounted(() => {
         sender,
         timestamp: d.timestamp || Date.now(), roomId: d.roomId || 0, color: 16744224, mode: 1, isHighlighted: true, type: "sc",
       });
+      if (globalSourceDanmaku.value.length > MAX_RUNTIME_LINES) globalSourceDanmaku.value.length = MAX_RUNTIME_LINES;
+      if (globalMatchedDanmaku.value.length > MAX_RUNTIME_LINES) globalMatchedDanmaku.value.length = MAX_RUNTIME_LINES;
       scheduleSave();
     });
   }

@@ -1,12 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_submodules
+
+hidden_imports = [
+    'receiver',
+    'sender',
+    'bilibili_core_api',
+    # bilibili-api-python 在运行时存在动态导入；打包时显式收集其子模块，
+    # 避免 anchor 模式下 `from bilibili_api import ...` 在产物里缺失。
+    *collect_submodules('bilibili_api'),
+]
 
 a = Analysis(
     ['packages/danmaku-core/danmaku.py'],
     pathex=['packages/danmaku-core'],
     binaries=[],
     datas=[],
-    hiddenimports=['receiver', 'sender', 'bilibili_core_api'],
+    hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

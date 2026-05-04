@@ -86,6 +86,40 @@ export interface AIConnectionStatus {
   }>;
 }
 
+export interface DashboardSnapshot {
+  metrics: Array<{ key: string; label: string; value: number; tone: "blue" | "purple" | "green" }>;
+  recentHits: Array<{
+    id: string;
+    keyword: string;
+    mode: "固定回复" | "AI" | "固定回复/AI";
+    priority: number;
+    count: number;
+  }>;
+  recentRecords: Array<{
+    id: string;
+    time: string;
+    title: string;
+    mode: "固定回复" | "AI" | "固定回复/AI";
+    duration: string;
+  }>;
+  aiQueueStatus: Array<{ key: "waiting" | "processing" | "done" | "failed"; label: string; value: number }>;
+  hasEnabledKeywordRules: boolean;
+}
+
+export interface DashboardRoomProfile {
+  name: string;
+  live: boolean;
+  roomId: number;
+  popularityText: string;
+  followersText: string;
+  avatar: string;
+}
+
+export interface DashboardViewModel {
+  profile: DashboardRoomProfile;
+  snapshot: DashboardSnapshot;
+}
+
 export interface AnchorProfilePayload {
   room_id_input: number;
   room_id_real: number;
@@ -116,7 +150,7 @@ export interface ConfigSchema {
 
 export interface DanmakuAPI {
   start: (config: unknown) => Promise<{ status: string }>;
-  stop: (options?: { sendBeforeStop?: boolean; message?: string }) => Promise<{ status: string }>;
+  stop: (options?: { sendBeforeStop?: boolean; message?: string; cancelStart?: boolean }) => Promise<{ status: string; cancelled?: boolean }>;
   send: (params: { msg: string; color?: number; mode?: number }) => Promise<unknown>;
   getStatus: () => Promise<{ connected: boolean; roomId: number | null }>;
   updateKeywords: (keywords: KeywordRule[]) => Promise<{ status: string }>;
@@ -177,6 +211,8 @@ export interface DanmakuAPI {
   openExternal: (url: string) => Promise<{ status: string; message?: string }>;
   /** 查询直播间主播资料 */
   getAnchorProfile: (roomId: number) => Promise<{ status: string; data?: AnchorProfilePayload; message?: string }>;
+  /** 获取 dashboard 组合视图模型（profile + snapshot） */
+  getDashboardViewModel: () => Promise<{ status: string; data?: DashboardViewModel; message?: string }>;
 }
 
 const api: DanmakuAPI = {
@@ -267,6 +303,7 @@ const api: DanmakuAPI = {
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   getAnchorProfile: (roomId) => ipcRenderer.invoke("room:getAnchorProfile", roomId),
+  getDashboardViewModel: () => ipcRenderer.invoke("dashboard:getViewModel"),
 };
 
 contextBridge.exposeInMainWorld("danmakuAPI", api);

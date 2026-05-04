@@ -74,10 +74,11 @@ const providerOptions: ProviderOption[] = [
         label: "── 免费模型 (Zen 免费额度) ──",
         models: [
           { id: "minimax-m2.5-free", name: "MiniMax M2.5 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "hy3-preview-free", name: "Hy3 Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "ling-2.6-flash", name: "Ling 2.6 Flash", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "nemotron-3-super-free", name: "Nemotron 3 Super Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "ling-2.6-flash-free", name: "Ling 2.6 Flash Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "trinity-large-preview-free", name: "Trinity Large Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "big-pickle", name: "Big Pickle", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "hy3-preview-free", name: "Hy3 Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "nemotron-3-super-free", name: "Nemotron 3 Super Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
         ],
       },
       {
@@ -129,7 +130,6 @@ const providerOptions: ProviderOption[] = [
           { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-3-5-haiku", name: "Claude Haiku 3.5", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", endpoint: "https://opencode.ai/zen/v1/models/gemini-3.1-pro" },
-          { id: "gemini-3-pro", name: "Gemini 3 Pro", endpoint: "https://opencode.ai/zen/v1/models/gemini-3-pro" },
           { id: "gemini-3-flash", name: "Gemini 3 Flash", endpoint: "https://opencode.ai/zen/v1/models/gemini-3-flash" },
         ],
       },
@@ -305,10 +305,22 @@ const remoteOpenCodeTierOverrides: Record<string, Exclude<OpenCodeTier, "unknown
   // "model-id": "zen",
 };
 
+/**
+ * Free 白名单：仅保留用户确认的免费模型。
+ * 不在该列表中的模型即便名字带 free，也不会归入免费分组。
+ */
+const ALLOWED_FREE_MODEL_IDS = new Set<string>([
+  "minimax-m2.5-free",
+  "ling-2.6-flash-free",
+  "trinity-large-preview-free",
+  "hy3-preview-free",
+  "nemotron-3-super-free",
+  "big-pickle",
+]);
+
 function isFreeModel(modelId: string, modelName?: string): boolean {
   const id = modelId.toLowerCase();
-  const name = (modelName || "").toLowerCase();
-  return id.includes("free") || name.includes("free") || id === "big-pickle";
+  return ALLOWED_FREE_MODEL_IDS.has(id);
 }
 
 function inferOpenCodeEndpointByModelId(modelId: string): string {
