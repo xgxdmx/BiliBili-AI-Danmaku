@@ -187,6 +187,53 @@
   font-size: 12px;
 }
 
+/* ─── 开发者图标链接（横向） ───────────────────────── */
+.developer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.developer-link {
+  min-width: 132px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.developer-link:hover {
+  background: color-mix(in srgb, var(--bg-hover) 88%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateY(-1px);
+}
+
+.developer-link-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--accent) 78%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent-dim) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.developer-link-name {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
 /* ─── 主题选项 ─────────────────────────────── */
 .theme-options {
   display: flex;

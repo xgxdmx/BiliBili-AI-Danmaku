@@ -149,6 +149,8 @@ export interface ConfigSchema {
 }
 
 export interface DanmakuAPI {
+  /** 通知主进程：渲染层首屏已可交互 */
+  notifyRendererReady: () => void;
   start: (config: unknown) => Promise<{ status: string }>;
   stop: (options?: { sendBeforeStop?: boolean; message?: string; cancelStart?: boolean }) => Promise<{ status: string; cancelled?: boolean }>;
   send: (params: { msg: string; color?: number; mode?: number }) => Promise<unknown>;
@@ -214,10 +216,27 @@ export interface DanmakuAPI {
   /** 获取 dashboard 组合视图模型（profile + snapshot） */
   getDashboardViewModel: () => Promise<{ status: string; data?: DashboardViewModel; message?: string }>;
   /** 延后预热 danmaku runtime（仅首次有效） */
-  warmupDanmakuRuntime: () => Promise<{ status: string; warmed?: boolean; skipped?: boolean }>;
+  warmupDanmakuRuntime: () => Promise<{
+    status: string;
+    warmed?: boolean;
+    skipped?: boolean;
+    warmup?: { started: boolean; reason?: string };
+  }>;
+  prepareRoomEntry: () => Promise<{ status: string; warmup?: { started: boolean; reason?: string }; prefetched?: boolean }>;
+  consumeRoomEntryPrefetch: () => Promise<{
+    status: string;
+    data?: {
+      config: ConfigSchema;
+      status: { connected: boolean; roomId: number | null };
+      warmed: boolean;
+      warmupReason?: string;
+      timestamp: number;
+    } | null;
+  }>;
 }
 
 const api: DanmakuAPI = {
+  notifyRendererReady: () => ipcRenderer.send("app:rendererReady"),
   start: (config) => ipcRenderer.invoke("danmaku:start", config),
   stop: (options) => ipcRenderer.invoke("danmaku:stop", options),
   send: (params) => ipcRenderer.invoke("danmaku:send", params),
@@ -251,18 +270,42 @@ const api: DanmakuAPI = {
 
   onDanmaku: (callback) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
+    const batchHandler = (_event: unknown, rows: unknown) => {
+      if (!Array.isArray(rows)) return;
+      for (const row of rows) callback(row);
+    };
     ipcRenderer.on("danmaku:received", handler);
-    return () => ipcRenderer.removeListener("danmaku:received", handler);
+    ipcRenderer.on("danmaku:received:batch", batchHandler);
+    return () => {
+      ipcRenderer.removeListener("danmaku:received", handler);
+      ipcRenderer.removeListener("danmaku:received:batch", batchHandler);
+    };
   },
   onGift: (callback) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
+    const batchHandler = (_event: unknown, rows: unknown) => {
+      if (!Array.isArray(rows)) return;
+      for (const row of rows) callback(row);
+    };
     ipcRenderer.on("danmaku:gift", handler);
-    return () => ipcRenderer.removeListener("danmaku:gift", handler);
+    ipcRenderer.on("danmaku:gift:batch", batchHandler);
+    return () => {
+      ipcRenderer.removeListener("danmaku:gift", handler);
+      ipcRenderer.removeListener("danmaku:gift:batch", batchHandler);
+    };
   },
   onSuperChat: (callback) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
+    const batchHandler = (_event: unknown, rows: unknown) => {
+      if (!Array.isArray(rows)) return;
+      for (const row of rows) callback(row);
+    };
     ipcRenderer.on("danmaku:superchat", handler);
-    return () => ipcRenderer.removeListener("danmaku:superchat", handler);
+    ipcRenderer.on("danmaku:superchat:batch", batchHandler);
+    return () => {
+      ipcRenderer.removeListener("danmaku:superchat", handler);
+      ipcRenderer.removeListener("danmaku:superchat:batch", batchHandler);
+    };
   },
   onConnected: (callback) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
@@ -307,6 +350,8 @@ const api: DanmakuAPI = {
   getAnchorProfile: (roomId) => ipcRenderer.invoke("room:getAnchorProfile", roomId),
   getDashboardViewModel: () => ipcRenderer.invoke("dashboard:getViewModel"),
   warmupDanmakuRuntime: () => ipcRenderer.invoke("app:warmupDanmakuRuntime"),
+  prepareRoomEntry: () => ipcRenderer.invoke("app:prepareRoomEntry"),
+  consumeRoomEntryPrefetch: () => ipcRenderer.invoke("app:consumeRoomEntryPrefetch"),
 };
 
 contextBridge.exposeInMainWorld("danmakuAPI", api);

@@ -138,10 +138,14 @@ export function cleanupBundledRunExeResidualsSync(): void {
  * - 仅 Windows 打包态启用
  * - 不影响业务连接链路，失败静默
  */
-export function warmupBundledDanmakuRuntime(): void {
-  if (process.platform !== "win32") return;
+export function warmupBundledDanmakuRuntime(): Promise<{ started: boolean; reason?: string }> {
+  if (process.platform !== "win32") {
+    return Promise.resolve({ started: false, reason: "non-win32" });
+  }
   const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
-  if (isDevMode) return;
+  if (isDevMode) {
+    return Promise.resolve({ started: false, reason: "dev-mode" });
+  }
 
   try {
     const resourcesPath = process.resourcesPath || electronApp.getAppPath();
@@ -153,25 +157,45 @@ export function warmupBundledDanmakuRuntime(): void {
       join(basePath, "run", "run.exe"),
     ];
     const runtimePath = candidates.find((p) => fs.existsSync(p));
-    if (!runtimePath) return;
+    if (!runtimePath) {
+      return Promise.resolve({ started: false, reason: "runtime-not-found" });
+    }
 
-    const child = spawn(runtimePath, ["__opencode_warmup__"], {
-      windowsHide: true,
-      stdio: ["ignore", "ignore", "ignore"],
-      env: {
-        ...process.env,
-        PYTHONUTF8: "1",
-        PYTHONIOENCODING: "utf-8",
-      },
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (value: { started: boolean; reason?: string }) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      const child = spawn(runtimePath, ["warmup"], {
+        windowsHide: true,
+        stdio: ["ignore", "ignore", "ignore"],
+        env: {
+          ...process.env,
+          PYTHONUTF8: "1",
+          PYTHONIOENCODING: "utf-8",
+        },
+      });
+
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch {}
+        done({ started: true, reason: "timeout-killed" });
+      }, 2500);
+
+      child.once("close", () => {
+        clearTimeout(timer);
+        done({ started: true, reason: "closed" });
+      });
+      child.once("error", () => {
+        clearTimeout(timer);
+        done({ started: false, reason: "spawn-error" });
+      });
     });
-
-    const timer = setTimeout(() => {
-      try { child.kill(); } catch {}
-    }, 2500);
-    child.once("close", () => clearTimeout(timer));
-    child.once("error", () => clearTimeout(timer));
   } catch {
     // 预热失败不影响主流程
+    return Promise.resolve({ started: false, reason: "exception" });
   }
 }
 

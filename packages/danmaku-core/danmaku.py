@@ -6,6 +6,7 @@ Bilibili Danmaku Entry Point - 单文件入口
   python danmaku.py sender      # 运行弹幕发送
   python danmaku.py send        # 发送单条弹幕 (需要额外参数)
   python danmaku.py anchor      # 查询直播间主播信息 (需要 room_id)
+  python danmaku.py warmup      # 预载关键模块，降低首次连接冷启动开销
 """
 import sys
 import asyncio
@@ -22,7 +23,7 @@ if sys.platform == "win32":
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python danmaku.py [receiver|sender|send|anchor]")
+        print("Usage: python danmaku.py [receiver|sender|send|anchor|warmup]")
         sys.exit(1)
 
     mode = sys.argv[1].lower()
@@ -65,6 +66,18 @@ if __name__ == "__main__":
             buvid3=args.buvid3,
         ))
         print(json.dumps(asdict(profile), ensure_ascii=False))
+    elif mode == "warmup" or mode == "__opencode_warmup__":
+        # 预载关键链路依赖，尽量把首次连接的 import/初始化成本前置。
+        # 注意：这里不建立真实连接，仅做模块装载与事件循环冷启动。
+        import receiver  # noqa: F401
+        import sender  # noqa: F401
+        import bilibili_core_api  # noqa: F401
+
+        async def _warmup() -> None:
+            await asyncio.sleep(0.05)
+
+        asyncio.run(_warmup())
+        print("ok")
     else:
         print(f"Unknown mode: {mode}")
         sys.exit(1)

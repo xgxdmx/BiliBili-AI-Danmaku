@@ -161,12 +161,26 @@ async function fetchStatus() {
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
+  const mountAt = Date.now();
+  window.danmakuAPI?.perfMark?.({ name: "room_view_mounted", at: mountAt });
   try {
-    // 延后预热：用户进入“直播间配置”后后台触发一次，
-    // 避免应用首启卡顿，同时降低首次连接冷启动抖动。
-    void window.danmakuAPI?.warmupDanmakuRuntime?.();
+    const prefetchStart = Date.now();
+    const prefetched = await window.danmakuAPI?.consumeRoomEntryPrefetch?.();
+    window.danmakuAPI?.perfMark?.({
+      name: "room_prefetch_done",
+      at: Date.now(),
+      detail: { costMs: Date.now() - prefetchStart, hit: Boolean(prefetched?.data) },
+    });
+    const prefetchedConfig = prefetched?.data?.config;
+    const prefetchedStatus = prefetched?.data?.status;
 
-    const config = await window.danmakuAPI?.getConfig();
+    const configStart = Date.now();
+    const config = prefetchedConfig || (await window.danmakuAPI?.getConfig());
+    window.danmakuAPI?.perfMark?.({
+      name: "room_config_ready",
+      at: Date.now(),
+      detail: { costMs: Date.now() - configStart, fromPrefetch: Boolean(prefetchedConfig) },
+    });
     if (config?.room) {
       if (config.room.roomId && Number(config.room.roomId) > 0) {
         form.roomId = Number(config.room.roomId);
@@ -181,10 +195,34 @@ onMounted(async () => {
       creds.buvid3 = config.credentials.buvid3 || "";
     }
     roomPrefsReady = true;
-    await fetchStatus();
-    statusTimer = setInterval(fetchStatus, 5000);
-  } catch (e) {
+    if (prefetchedStatus) {
+      isConnected.value = prefetchedStatus.connected || false;
+      currentRoomId.value = prefetchedStatus.roomId || null;
+      if (isConnected.value && currentRoomId.value) {
+        form.roomId = currentRoomId.value;
+      }
+    } else {
+      const statusStart = Date.now();
+      await fetchStatus();
+      window.danmakuAPI?.perfMark?.({
+        name: "room_status_ready",
+        at: Date.now(),
+        detail: { costMs: Date.now() - statusStart, fromPrefetch: false },
+      });
     }
+    statusTimer = setInterval(fetchStatus, 5000);
+    window.danmakuAPI?.perfMark?.({
+      name: "room_view_data_ready",
+      at: Date.now(),
+      detail: { totalCostMs: Date.now() - mountAt },
+    });
+  } catch (e) {
+    window.danmakuAPI?.perfMark?.({
+      name: "room_view_mount_error",
+      at: Date.now(),
+      detail: { error: String(e) },
+    });
+  }
 });
 
 onUnmounted(() => {

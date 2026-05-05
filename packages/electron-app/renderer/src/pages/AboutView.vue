@@ -23,10 +23,18 @@ const TECH_STACK = [
 // ─── 开源致谢 ───────────────────────────────────────────────────
 const OPEN_SOURCE = [
   { name: "blivedm", url: "https://github.com/xfgryujk/blivedm" },
+  { name: "bilibili-api-python", url: "https://github.com/Nemo2011/bilibili-api" },
   { name: "electron-builder", url: "https://www.electron.build" },
   { name: "PyInstaller", url: "https://pyinstaller.org" },
   { name: "electron-store", url: "https://github.com/sindresorhus/electron-store" },
   { name: "vue-router", url: "https://router.vuejs.org" },
+];
+
+// ─── 开发者联系方式 ─────────────────────────────────────────────
+const DEVELOPER_LINKS = [
+  { name: "GitHub", icon: "github", url: "https://github.com/xgxdmx" },
+  { name: "Bilibili", icon: "bilibili", url: "https://space.bilibili.com/18180526" },
+  { name: "Blog", icon: "website", url: "https://www.xgxdmx.com" },
 ];
 
 // ─── 主题设置 ─────────────────────────────────────────────────
@@ -234,6 +242,37 @@ async function setTheme(mode: ThemeMode) {
         >
           <span class="oss-name">{{ lib.name }}</span>
           <span class="oss-arrow">↗</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 开发者联系方式 -->
+    <div class="section">
+      <h3 class="section-title">开发者</h3>
+      <div class="developer-links">
+        <button
+          v-for="link in DEVELOPER_LINKS"
+          :key="link.name"
+          class="developer-link"
+          @click="openLink(link.url)"
+        >
+          <span class="developer-link-icon" aria-hidden="true">
+            <svg v-if="link.icon === 'github'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 19c-4 1.5-4-2-6-2m12 4v-3.9a3.4 3.4 0 0 0-.94-2.64c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 19 3.77 5.07 5.07 0 0 0 18.91 1S17.73.65 15 2.48a13.38 13.38 0 0 0-6 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 3.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.4 3.4 0 0 0 9 17.13V21" />
+            </svg>
+            <svg v-else-if="link.icon === 'website'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M2 12h20" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="5" width="18" height="14" rx="3" />
+              <path d="M8 3.5 6.5 5M16 3.5 17.5 5" />
+              <circle cx="9" cy="12" r="1" fill="currentColor" stroke="none" />
+              <circle cx="15" cy="12" r="1" fill="currentColor" stroke="none" />
+            </svg>
+          </span>
+          <span class="developer-link-name">{{ link.name }}</span>
         </button>
       </div>
     </div>

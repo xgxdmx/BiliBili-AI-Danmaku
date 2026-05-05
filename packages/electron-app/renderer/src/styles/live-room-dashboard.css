@@ -65,7 +65,8 @@
 .room-title {
   margin: 0;
   font-size: 20px;
-  line-height: 1.05;
+  line-height: 1.18;
+  padding-bottom: 2px;
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
@@ -146,6 +147,12 @@
 .records-card {
   padding: 10px 12px;
   position: relative;
+}
+
+.records-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .stream-card {
@@ -730,7 +737,9 @@
 }
 
 .record-list {
+  min-height: 0;
   max-height: 220px;
+  height: 100%;
   overflow-y: auto;
   padding-right: 3px;
 }

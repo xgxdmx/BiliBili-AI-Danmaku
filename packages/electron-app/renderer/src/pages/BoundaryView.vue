@@ -64,7 +64,7 @@ function mapStreamRows(list: StreamDanmakuRow[]) {
     return idx === 0 ? "pink" : idx === 1 ? "blue" : idx === 2 ? "indigo" : idx === 3 ? "violet" : "amber";
   };
 
-  return list.slice(0, 300).map((row, idx) => ({
+  return list.slice(0, 180).map((row, idx) => ({
     id: row.id,
     time: formatTime(row.timestamp),
     medal: row.sender?.medal?.name || row.sender?.guard_title || "",
@@ -535,7 +535,7 @@ onUnmounted(() => {
           <p class="stream-mode-desc">{{ streamModeText }}</p>
         </header>
 
-        <transition-group ref="streamListEl" tag="ul" class="stream-list" @scroll="onStreamScroll">
+        <ul ref="streamListEl" class="stream-list" @scroll="onStreamScroll">
           <li v-for="row in streamRows" :key="row.id" :class="['stream-row', { 'is-superchat': row.isSuperChat }]">
             <span class="stream-time">{{ row.time }}</span>
             <span v-if="row.medal" class="stream-medal" :class="row.badgeClass">
@@ -556,7 +556,7 @@ onUnmounted(() => {
             </span>
             <span class="stream-content">{{ row.content }}</span>
           </li>
-        </transition-group>
+        </ul>
 
         <button
           v-if="!streamStickToBottom && pendingLatestCount > 0"

@@ -340,6 +340,17 @@ pnpm package:clean
 | 📦 安装包 | NSIS (自定义安装/卸载/图标/中文界面) |
 | 🔄 CI/CD | GitHub Actions (Windows + macOS 自动构建) |
 
+## 🙏 开源致谢
+
+本项目依赖以下优秀开源项目（与应用内「关于」页保持一致）：
+
+- [blivedm](https://github.com/xfgryujk/blivedm)
+- [bilibili-api-python](https://github.com/Nemo2011/bilibili-api)
+- [electron-builder](https://www.electron.build)
+- [PyInstaller](https://pyinstaller.org)
+- [electron-store](https://github.com/sindresorhus/electron-store)
+- [vue-router](https://router.vuejs.org)
+
 ## 📅 更新日志
 
 | 版本 | 日期 | 主要改动                                                                                                                                                                                                   |

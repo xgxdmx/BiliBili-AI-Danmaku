@@ -8,7 +8,7 @@
 //   4. 进程退出清理（SIGINT / SIGTERM / window-all-closed）
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, Menu, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, Tray, powerMonitor } from "electron";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
@@ -271,6 +271,95 @@ let latestAIStatus: AIRelayStatus = {
 let cachedDashboardRoomProfile: DashboardRoomProfilePayload | null = null;
 let cachedDashboardRoomProfileRoomId = 0;
 let danmakuRuntimeWarmed = false;
+let rendererReadyNotified = false;
+let delayedWarmupTimer: ReturnType<typeof setTimeout> | null = null;
+let idleWarmupPollTimer: ReturnType<typeof setInterval> | null = null;
+let forcedWarmupTimer: ReturnType<typeof setTimeout> | null = null;
+let roomEntryPrefetchCache: {
+  config: ReturnType<typeof getConfig>;
+  status: { connected: boolean; roomId: number | null };
+  warmed: boolean;
+  warmupReason?: string;
+  timestamp: number;
+} | null = null;
+
+const DELAYED_WARMUP_MS = 12_000;
+const IDLE_WARMUP_POLL_MS = 5_000;
+const IDLE_WARMUP_REQUIRED_IDLE_SEC = 8;
+const FORCED_WARMUP_MS = 45_000;
+
+/** 清理 warmup 相关定时器，避免退出阶段和重复调度阶段残留。 */
+function clearWarmupTimers(): void {
+  if (delayedWarmupTimer) {
+    clearTimeout(delayedWarmupTimer);
+    delayedWarmupTimer = null;
+  }
+  if (idleWarmupPollTimer) {
+    clearInterval(idleWarmupPollTimer);
+    idleWarmupPollTimer = null;
+  }
+  if (forcedWarmupTimer) {
+    clearTimeout(forcedWarmupTimer);
+    forcedWarmupTimer = null;
+  }
+}
+
+/**
+ * 后台触发 warmup（一次性）。
+ * - reason 仅用于日志诊断，便于回溯是“延迟触发/空闲触发/强制兜底触发”。
+ * - 这里永远不抛错到调用方：warmup 失败不影响主流程与 UI 可交互性。
+ */
+function triggerBackgroundWarmup(reason: "delayed" | "idle" | "forced"): void {
+  if (danmakuRuntimeWarmed || isAppQuitting || isCleanupRunning) return;
+  danmakuRuntimeWarmed = true;
+  clearWarmupTimers();
+  void warmupBundledDanmakuRuntime().then((result) => {
+    logger.log("[Warmup] runtime warmup finished", { reason, warmupResult: result.reason, started: result.started });
+  }).catch((e) => {
+    logger.warn("[Warmup] runtime warmup failed", { reason, error: String(e) });
+  });
+}
+
+/**
+ * 三段式 warmup 调度策略：
+ * 1) delayed：渲染层 ready 后延迟触发，避开首屏和首次点击关键路径
+ * 2) idle：轮询系统空闲状态，在“无焦点 + 空闲秒数达标”时提前触发
+ * 3) forced：兜底超时触发，确保长时间未空闲也能完成预热
+ */
+function scheduleBackgroundWarmup(): void {
+  if (danmakuRuntimeWarmed || isAppQuitting || isCleanupRunning) return;
+
+  if (delayedWarmupTimer) clearTimeout(delayedWarmupTimer);
+  delayedWarmupTimer = setTimeout(() => {
+    triggerBackgroundWarmup("delayed");
+  }, DELAYED_WARMUP_MS);
+  delayedWarmupTimer.unref?.();
+
+  if (idleWarmupPollTimer) clearInterval(idleWarmupPollTimer);
+  idleWarmupPollTimer = setInterval(() => {
+    if (danmakuRuntimeWarmed || isAppQuitting || isCleanupRunning) {
+      if (idleWarmupPollTimer) {
+        clearInterval(idleWarmupPollTimer);
+        idleWarmupPollTimer = null;
+      }
+      return;
+    }
+
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    const idleSeconds = powerMonitor.getSystemIdleTime();
+    // 判定空闲：当前无聚焦窗口 + 系统空闲时长达标。
+    const canWarmupByIdle = !focusedWindow && idleSeconds >= IDLE_WARMUP_REQUIRED_IDLE_SEC;
+    if (!canWarmupByIdle) return;
+    triggerBackgroundWarmup("idle");
+  }, IDLE_WARMUP_POLL_MS);
+  idleWarmupPollTimer.unref?.();
+
+  if (forcedWarmupTimer) clearTimeout(forcedWarmupTimer);
+  forcedWarmupTimer = setTimeout(() => {
+    triggerBackgroundWarmup("forced");
+  }, FORCED_WARMUP_MS);
+  forcedWarmupTimer.unref?.();
+}
 
 /**
  * 主进程统一生成 dashboard 房间资料：
@@ -394,10 +483,29 @@ appContext.applyCloseDecision = (action, remember) => {
 async function cleanupBeforeExit(): Promise<void> {
   if (isCleanupRunning) return;
   isCleanupRunning = true;
+
+  const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T | null> => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const timeoutPromise = new Promise<null>((resolve) => {
+        timer = setTimeout(() => {
+          logger.warn(`[Exit] ${label} timeout`, { timeoutMs });
+          resolve(null);
+        }, timeoutMs);
+      });
+      return (await Promise.race([promise, timeoutPromise])) as T | null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   try {
+    clearWarmupTimers();
+
     if (danmakuService) {
       try {
-        await danmakuService.stop();
+        // 退出以响应速度优先：若优雅停止超时，后续由兜底清理继续收敛残留。
+        await withTimeout(danmakuService.stop(), 1200, "danmakuService.stop");
       } catch (e) {
         console.error("Error stopping danmaku service:", e);
       } finally {
@@ -412,7 +520,7 @@ async function cleanupBeforeExit(): Promise<void> {
     aiRelay?.disconnect();
 
     // 退出时清理部分 Electron 运行缓存，减少 Roaming 目录冗余文件
-    await clearElectronRuntimeCachesOnExit({ mainWindow, biliLoginWindow });
+    await withTimeout(clearElectronRuntimeCachesOnExit({ mainWindow, biliLoginWindow }), 900, "clearElectronRuntimeCachesOnExit");
 
     if (biliLoginWindow && !biliLoginWindow.isDestroyed()) {
       try {
@@ -488,6 +596,7 @@ function runQuitBarrier(): Promise<void> {
 /** 创建主 BrowserWindow，配置预加载脚本和安全策略 */
 function createWindow(): void {
   logger.log("Creating window, dev:", logger.isDev);
+  rendererReadyNotified = false;
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -497,6 +606,7 @@ function createWindow(): void {
     title: "BiliBili AI弹幕姬",
     icon: getAppIconPath(),
     frame: true,
+    show: false,
     backgroundColor: "#1a1b26",
     webPreferences: {
       preload: resolvePreloadScriptPath(),
@@ -589,6 +699,93 @@ function registerIpcHandlers(): void {
     latestAIStatus = aiRelay.getStatus();
   };
 
+  // 高频事件降压：批量下发弹幕/礼物/SC，减少 renderer IPC 频次
+  const STREAM_BATCH_INTERVAL_MS = 120;
+  const STREAM_BATCH_MAX_SIZE = 40;
+  let danmakuBatchBuffer: any[] = [];
+  let giftBatchBuffer: any[] = [];
+  let superchatBatchBuffer: any[] = [];
+  let streamBatchTimer: NodeJS.Timeout | null = null;
+
+  const flushStreamBatches = (): void => {
+    streamBatchTimer = null;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    if (danmakuBatchBuffer.length > 0) {
+      mainWindow.webContents.send("danmaku:received:batch", danmakuBatchBuffer);
+      danmakuBatchBuffer = [];
+    }
+    if (giftBatchBuffer.length > 0) {
+      mainWindow.webContents.send("danmaku:gift:batch", giftBatchBuffer);
+      giftBatchBuffer = [];
+    }
+    if (superchatBatchBuffer.length > 0) {
+      mainWindow.webContents.send("danmaku:superchat:batch", superchatBatchBuffer);
+      superchatBatchBuffer = [];
+    }
+  };
+
+  const scheduleStreamBatchFlush = (): void => {
+    if (streamBatchTimer) return;
+    streamBatchTimer = setTimeout(() => {
+      flushStreamBatches();
+    }, STREAM_BATCH_INTERVAL_MS);
+  };
+
+  const pushStreamBatch = (channel: "danmaku" | "gift" | "superchat", payload: any): void => {
+    if (channel === "danmaku") {
+      danmakuBatchBuffer.push(payload);
+      if (danmakuBatchBuffer.length >= STREAM_BATCH_MAX_SIZE) {
+        flushStreamBatches();
+        return;
+      }
+    } else if (channel === "gift") {
+      giftBatchBuffer.push(payload);
+      if (giftBatchBuffer.length >= STREAM_BATCH_MAX_SIZE) {
+        flushStreamBatches();
+        return;
+      }
+    } else {
+      superchatBatchBuffer.push(payload);
+      if (superchatBatchBuffer.length >= STREAM_BATCH_MAX_SIZE) {
+        flushStreamBatches();
+        return;
+      }
+    }
+    scheduleStreamBatchFlush();
+  };
+
+  // AI 状态节流：最多每 240ms 推一次，降低高频 enqueue 导致的 UI 压力
+  const AI_STATUS_THROTTLE_MS = 240;
+  let aiStatusLastSentAt = 0;
+  let aiStatusPending: AIRelayStatus | null = null;
+  let aiStatusTimer: NodeJS.Timeout | null = null;
+
+  const flushAiStatus = (): void => {
+    aiStatusTimer = null;
+    if (!aiStatusPending) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    aiStatusLastSentAt = Date.now();
+    mainWindow.webContents.send("ai:status", aiStatusPending);
+    aiStatusPending = null;
+  };
+
+  const emitAiStatusThrottled = (status: AIRelayStatus): void => {
+    aiStatusPending = status;
+    const now = Date.now();
+    const elapsed = now - aiStatusLastSentAt;
+    if (elapsed >= AI_STATUS_THROTTLE_MS && !aiStatusTimer) {
+      flushAiStatus();
+      return;
+    }
+    if (!aiStatusTimer) {
+      const wait = Math.max(16, AI_STATUS_THROTTLE_MS - elapsed);
+      aiStatusTimer = setTimeout(() => {
+        flushAiStatus();
+      }, wait);
+    }
+  };
+
   // ─── 初始化子模块 ─────────────────────────────────────────
 
   /** AI 中继管理器：连接大模型供应商，管理回复队列 */
@@ -601,7 +798,7 @@ function registerIpcHandlers(): void {
     });
     aiRelay.on("status", (status: AIRelayStatus) => {
       latestAIStatus = status;
-      mainWindow?.webContents.send("ai:status", status);
+      emitAiStatusThrottled(status);
     });
   }
 
@@ -630,7 +827,7 @@ function registerIpcHandlers(): void {
       danmakuService = new DanmakuService();
       danmakuService.on("danmaku", (data) => {
           dashboardMetricsStore.ingestDanmaku(data);
-          mainWindow?.webContents.send("danmaku:received", data);
+          pushStreamBatch("danmaku", data);
           const username = data?.sender?.username || "";
           if (shouldIgnoreByUsername(username)) return;
 
@@ -680,7 +877,7 @@ function registerIpcHandlers(): void {
         });
       danmakuService.on("gift", (data) => {
         dashboardMetricsStore.ingestGift(data);
-        mainWindow?.webContents.send("danmaku:gift", data);
+        pushStreamBatch("gift", data);
         const username = data?.sender?.username || "";
         if (aiRelay && !shouldIgnoreByUsername(username)) {
           aiRelay.enqueue({
@@ -701,7 +898,7 @@ function registerIpcHandlers(): void {
       });
       danmakuService.on("superchat", (data) => {
         dashboardMetricsStore.ingestSuperChat(data);
-        mainWindow?.webContents.send("danmaku:superchat", data);
+        pushStreamBatch("superchat", data);
       });
       danmakuService.on("connected", (data) => {
         mainWindow?.webContents.send("danmaku:connected", data);
@@ -714,6 +911,11 @@ function registerIpcHandlers(): void {
         mainWindow?.webContents.send("danmaku:error", data);
       });
     }
+
+    // 用户主动启动监听时，禁止后台 warmup 与启动过程并发，避免额外抖动。
+    danmakuRuntimeWarmed = true;
+    clearWarmupTimers();
+
     await danmakuService.start(config);
     return { status: "ok" };
   });
@@ -750,8 +952,11 @@ function registerIpcHandlers(): void {
 
   /** 查询弹幕服务连接状态 */
   ipcMain.handle("danmaku:getStatus", async () => {
+    const t0 = Date.now();
     if (!danmakuService) return { connected: false, roomId: null };
-    return danmakuService.getStatus();
+    const status = danmakuService.getStatus();
+    logger.log("[Perf] danmaku:getStatus", { durationMs: Date.now() - t0, connected: status.connected });
+    return status;
   });
 
   /**
@@ -816,6 +1021,58 @@ function registerIpcHandlers(): void {
   registerAuthIpcHandlers(appContext);
   registerAiIpcHandlers(appContext);
   registerAppUtilityIpcHandlers();
+
+  ipcMain.handle("app:prepareRoomEntry", async () => {
+    // 非阻塞：仅准备预取数据，warmup 始终走后台调度，禁止在此处等待子进程冷启动。
+    if (!danmakuRuntimeWarmed) {
+      scheduleBackgroundWarmup();
+    }
+
+    const config = getConfig();
+    const status = danmakuService ? danmakuService.getStatus() : { connected: false, roomId: null };
+
+    roomEntryPrefetchCache = {
+      config,
+      status,
+      warmed: true,
+      warmupReason: danmakuRuntimeWarmed ? "already-warmed" : "background-scheduled",
+      timestamp: Date.now(),
+    };
+
+    return { status: "ok", warmup: { started: danmakuRuntimeWarmed, reason: "background" }, prefetched: true };
+  });
+
+  ipcMain.handle("app:consumeRoomEntryPrefetch", async () => {
+    const t0 = Date.now();
+    const data = roomEntryPrefetchCache;
+    roomEntryPrefetchCache = null;
+    logger.log("[Perf] app:consumeRoomEntryPrefetch", {
+      durationMs: Date.now() - t0,
+      hit: Boolean(data),
+    });
+    return { status: "ok", data };
+  });
+
+  ipcMain.removeAllListeners("app:perfMark");
+  ipcMain.on("app:perfMark", (_event, payload) => {
+    const name = String(payload?.name || "unknown");
+    const at = Number(payload?.at || Date.now());
+    const detail = payload?.detail && typeof payload.detail === "object" ? payload.detail : undefined;
+    logger.log("[PerfMark]", { name, at, detail });
+  });
+
+  ipcMain.removeAllListeners("app:rendererReady");
+  ipcMain.on("app:rendererReady", () => {
+    if (rendererReadyNotified) return;
+    rendererReadyNotified = true;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+
+    // 渲染层可交互后采用“延迟 + 空闲 + 强制兜底”三段式后台预热。
+    scheduleBackgroundWarmup();
+  });
 }
 
 // ─── 单实例限制 ────────────────────────────────────────────
@@ -852,8 +1109,18 @@ if (!gotTheLock) {
 
     createWindow();
     registerIpcHandlers();
-    // 托盘初始化放在 IPC 注册之后，避免托盘异常影响主流程
-    appShell.ensureTray();
+    // 托盘初始化稍后执行，把首帧渲染优先级提到最前，降低“首启卡顿”体感
+    setTimeout(() => {
+      appShell.ensureTray();
+    }, 300).unref?.();
+
+    // 兜底：若渲染层未发 rendererReady，20s 后仍显示主窗口避免不可见。
+    setTimeout(() => {
+      if (rendererReadyNotified) return;
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+        mainWindow.show();
+      }
+    }, 20000).unref?.();
   });
 
   /** 延后预热 danmaku runtime（仅触发一次），用于降低首次连接冷启动卡顿。 */
@@ -862,8 +1129,8 @@ if (!gotTheLock) {
       return { status: "ok", warmed: true, skipped: true };
     }
     danmakuRuntimeWarmed = true;
-    warmupBundledDanmakuRuntime();
-    return { status: "ok", warmed: true, skipped: false };
+    const result = await warmupBundledDanmakuRuntime();
+    return { status: "ok", warmed: true, skipped: false, warmup: result };
   });
 
   /** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */
