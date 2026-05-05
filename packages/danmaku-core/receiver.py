@@ -56,7 +56,17 @@ def sanitize_utf8_text(value: Any) -> str:
 # ─── JSON-RPC Protocol ─────────────────────────────────────
 
 class JsonRpcServer:
-    """基于 stdio 的 JSON-RPC 2.0 服务器"""
+    """基于 stdio 的 JSON-RPC 2.0 服务器。
+
+    设计要点：
+    1) stdout 只能输出 JSON-RPC 数据，避免被普通日志污染；
+       因此调试日志统一走 stderr（见 log_stderr）。
+    2) Windows 下 stdin.readline() 与 asyncio 兼容性较差，
+       采用“读取线程 + 队列 + 主协程消费”的模型。
+    3) 仅处理两类 JSON-RPC 消息：
+       - Request/Notification（带 method）
+       - Response（带 id/result 或 id/error）
+    """
 
     def __init__(self):
         self._methods: dict[str, Callable] = {}
@@ -82,7 +92,12 @@ class JsonRpcServer:
         sys.stdout.flush()
 
     async def _read_loop(self):
-        """从 stdin 逐行读取 JSON-RPC 请求 - 使用线程安全的队列"""
+        """从 stdin 逐行读取 JSON-RPC 请求（线程读取 + 异步消费）。
+
+        为什么不用纯 asyncio 读 stdin：
+        - 在 Windows 打包/控制台环境下，异步读取 stdin 经常出现阻塞或事件循环兼容问题。
+        - 这里用后台线程稳定读取，再由协程非阻塞消费队列，可靠性更高。
+        """
         # 创建一个队列用于线程间通信
         q: queue.Queue[str] = queue.Queue()
 
@@ -116,6 +131,8 @@ class JsonRpcServer:
                 await self.send_notification("system.error", {"message": f"Read error: {e}"})
 
     async def _handle_message(self, raw: str):
+        # 1) 原始文本 -> JSON。
+        #    失败时直接发送 system.error，避免抛异常中断读取循环。
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError as e:
@@ -126,20 +143,28 @@ class JsonRpcServer:
         msg_id = msg.get("id")
         params = msg.get("params", {})
 
+        # 2) 没有 method 的消息不是请求/通知，直接忽略。
         if not method:
             return
 
         handler = self._methods.get(method)
+        # 3) method 未注册：
+        #    - 如果带 id（即 request），按 JSON-RPC 规范返回 -32601。
+        #    - 如果不带 id（即 notification），静默忽略。
         if not handler:
             if msg_id:
                 await self.send_response(msg_id, error={"code": -32601, "message": f"Method not found: {method}"})
             return
 
         try:
+            # 4) 兼容同步/异步 handler：
+            #    - 异步函数 await 执行
+            #    - 同步函数直接调用
             result = await handler(params) if inspect.iscoroutinefunction(handler) else handler(params)
             if msg_id:
                 await self.send_response(msg_id, result=result)
         except Exception as e:
+            # 5) 处理异常统一返回 -32603（内部错误）
             if msg_id:
                 await self.send_response(msg_id, error={"code": -32603, "message": str(e)})
 
@@ -166,6 +191,19 @@ class BilibiliDanmakuClient:
         self._session: Optional[aiohttp.ClientSession] = None
 
     async def start(self, params: dict) -> dict:
+        """启动监听。
+
+        输入：
+        - roomId: 直播间房间号（必填）
+        - credentials: 包含 sessdata/biliJct/buvid3 的字典（可选但建议提供）
+
+        流程：
+        1) 解析房间号与凭证；
+        2) 创建带 Cookie 的 aiohttp session（若有凭证）；
+        3) 初始化 BLiveClient 并注册 handler；
+        4) 启动 client 并回发 connection.connected；
+        5) 失败时规范化错误并回发 connection.error。
+        """
         room_id = params.get("roomId")
         if not room_id:
             raise ValueError("roomId is required")
@@ -244,6 +282,7 @@ class BilibiliDanmakuClient:
 
     async def stop(self, params: dict) -> dict:
         if self._client:
+            # blivedm 新版本 stop() 是同步方法，这里直接调用即可
             self._client.stop()  # 同步停止
             self._client = None
             self._connected = False
@@ -258,7 +297,14 @@ class BilibiliDanmakuClient:
 
 
 class _DanmakuHandler:
-    """弹幕事件处理器 - 直接实现 handle 方法修复 blivedm bug"""
+    """弹幕事件处理器。
+
+    说明：
+    - 采用直接实现 handle(cmd) 的方式，显式分发 DANMU/GIFT/SC，
+      便于在项目层做字段兜底与统一输出格式。
+    - 输出给上层（Node/Electron）的结构是“项目自定义契约”，
+      不完全等同于 blivedm 原始 data 结构。
+    """
 
     def __init__(self, client: BilibiliDanmakuClient):
         self.client = client
@@ -281,6 +327,7 @@ class _DanmakuHandler:
         3) info[3] 粉丝牌数组 index 6 — 部分协议版本的 guard_level 位
         """
         # ── 优先级 1: info[7] 是 B站 DANMU_MSG 原始协议标准位置 ──
+        # A. 先看 DANMU_MSG 标准位 info[7]（最可靠）
         if isinstance(info, list) and len(info) > 7:
             try:
                 v = int(info[7])
@@ -291,6 +338,7 @@ class _DanmakuHandler:
 
         # ── 优先级 2: 命名字段 (open_live 协议 / blivedm 解析) ──
         candidates = []
+        # B. 再看命名字段（不同协议/版本字段名不一致）
         if isinstance(user, dict):
             candidates.extend([
                 user.get("guard_level"),
@@ -317,6 +365,7 @@ class _DanmakuHandler:
             candidates.append(command.get("guard_level"))
             candidates.append(command.get("privilege_type"))
 
+        # C. 依次尝试转 int，命中 0/1/2/3 立即返回
         for value in candidates:
             try:
                 v = int(value)
@@ -326,6 +375,7 @@ class _DanmakuHandler:
                 pass
 
         # ── 优先级 3: info[3] 粉丝牌数组 index 6 ──
+        # D. 最后兜底到 info[3] 粉丝牌数组特定位（兼容旧结构）
         medal = info[3] if isinstance(info, list) and len(info) > 3 and isinstance(info[3], list) else []
         if isinstance(medal, list) and len(medal) > 6:
             try:
@@ -338,7 +388,20 @@ class _DanmakuHandler:
         return 0
 
     def _extract_medal(self, command, user, info):
-        """提取粉丝牌信息，兼容多种字段结构。"""
+        """提取粉丝牌信息，兼容多种字段结构。
+
+        输出统一结构：
+        {
+          name: str,
+          level: int,
+          color: int,
+        }
+
+        兼容顺序：
+        1) user.medal / user.base.medal
+        2) command.data.medal_info
+        3) DANMU_MSG info[3] 数组
+        """
         candidates = []
 
         # 1) user.medal / user.base.medal
@@ -354,6 +417,7 @@ class _DanmakuHandler:
             if isinstance(data, dict):
                 candidates.append(data.get("medal_info"))
 
+        # 命名字段解析：只要拿到 name 就构建统一结构返回
         for c in candidates:
             if not isinstance(c, dict):
                 continue
@@ -368,6 +432,7 @@ class _DanmakuHandler:
                         "color": int(color) if color is not None else 0,
                     }
                 except Exception:
+                    # 某些字段格式异常时，至少保证 name 不丢
                     return {
                         "name": str(name),
                         "level": 0,
@@ -375,6 +440,7 @@ class _DanmakuHandler:
                     }
 
         # 3) 兼容 DANMU_MSG info[3] 数组
+        # 命名字段拿不到时，再兼容 DANMU_MSG 的 info[3]
         medal = info[3] if isinstance(info, list) and len(info) > 3 else []
         if isinstance(medal, list) and len(medal) >= 2:
             try:
@@ -409,8 +475,10 @@ class _DanmakuHandler:
         cmd = command.get("cmd", "")
         pos = cmd.find(":")
         if pos != -1:
+            # B站有时会附带后缀参数，如 CMD:xxx，这里统一裁掉后缀
             cmd = cmd[:pos]
         
+        # 按消息类型分发。未识别消息不抛错，避免影响主流程。
         if cmd == "DANMU_MSG":
             self._handle_danmaku(command)
         elif cmd == "SEND_GIFT":
@@ -419,7 +487,11 @@ class _DanmakuHandler:
             self._handle_superchat(command)
 
     def _handle_danmaku(self, command):
-        """处理弹幕"""
+        """处理普通弹幕（DANMU_MSG）。
+
+        这里会把 blivedm 原始命令转换为项目统一结构后通过
+        JSON-RPC 通知 `danmaku.received` 发给 Node。
+        """
         info = command.get("info", [])
         if not info:
             return
@@ -434,6 +506,7 @@ class _DanmakuHandler:
             uname = "匿名用户"
             
             if user:
+                # 新结构优先：command.user 中通常包含 uid/uname
                 uid = int(user.get("uid", 0)) if user.get("uid") else 0
                 uname = str(user.get("uname", f"uid_{uid}"))
                 # 如果用户名被遮挡，用 base 信息
@@ -443,6 +516,7 @@ class _DanmakuHandler:
                         uname = str(base.get("name", uname))
             
             # 如果没找到，从 info 数组获取
+            # 兜底：若 user 结构不完整，再从 info[2] 老结构取值
             if uname == "匿名用户" or uid == 0:
                 user_info = info[2] if len(info) > 2 else []
                 if user_info:
@@ -476,10 +550,15 @@ class _DanmakuHandler:
             log_stderr(f"[Danmaku parse error] {e}")
 
     def _handle_gift(self, command):
-        """处理礼物"""
+        """处理礼物（SEND_GIFT）。
+
+        输出通知：`danmaku.gift`
+        字段使用项目统一命名（giftId/giftName/count/sender...）。
+        """
         data_payload = command.get("data", {})
         medal_data = self._extract_medal(command, {"medal": data_payload.get("medal_info")}, [])
         ts = int(time.time() * 1000)
+        # 统一转换成前端消费结构；字段名尽量稳定（giftId/giftName/count/sender）
         asyncio.create_task(self.client.rpc.send_notification("danmaku.gift", {
             "giftId": data_payload.get("giftId", 0),
             "giftName": data_payload.get("giftName", ""),
@@ -498,20 +577,82 @@ class _DanmakuHandler:
         }))
 
     def _handle_superchat(self, command):
-        """处理 SuperChat"""
+        """处理 SuperChat（SUPER_CHAT_MESSAGE）。
+
+        重点：用户名兜底
+        ----------------
+        blivedm/web 模型中，SC 用户名常位于 `data.user_info.uname`。
+        历史代码只读 `data.uname`，在部分场景会拿不到用户名，
+        导致前端回退显示“用户”。
+
+        当前策略：
+        1) uid 先取 data.uid，缺失时回退 data.user_info.uid
+        2) username 先取 data.uname，缺失时回退 data.user_info.uname
+        3) 补充 face/guard_level/guard_title/medal/timestamp
+
+        输出通知：`danmaku.superchat`
+        """
         data = command.get("data", {})
+        user_info = data.get("user_info", {}) if isinstance(data, dict) else {}
+        medal_info = data.get("medal_info", {}) if isinstance(data, dict) else {}
+
+        # uid 优先顶层 data.uid，缺失时回退 user_info.uid
+        uid = data.get("uid", 0)
+        if not uid and isinstance(user_info, dict):
+            uid = user_info.get("uid", 0)
+
+        # uname 优先顶层 data.uname，缺失时回退 user_info.uname
+        # 这是修复“前端显示用户”问题的关键分支。
+        uname = data.get("uname", "")
+        if not uname and isinstance(user_info, dict):
+            uname = user_info.get("uname", "")
+
+        face = ""
+        if isinstance(user_info, dict):
+            face = user_info.get("face", "")
+
+        guard_level = 0
+        # guard_level 仅在可转 int 时使用；异常时回退 0
+        if isinstance(user_info, dict):
+            try:
+                guard_level = int(user_info.get("guard_level", 0) or 0)
+            except (TypeError, ValueError):
+                guard_level = 0
+
+        medal_data = None
+        # SC 的 medal_info 可选；存在且含 name 才输出 medal
+        if isinstance(medal_info, dict):
+            medal_name = medal_info.get("medal_name") or ""
+            if medal_name:
+                try:
+                    medal_data = {
+                        "name": str(medal_name),
+                        "level": int(medal_info.get("medal_level", 0) or 0),
+                        "color": int(medal_info.get("medal_color", 0) or 0),
+                    }
+                except (TypeError, ValueError):
+                    medal_data = {
+                        "name": str(medal_name),
+                        "level": 0,
+                        "color": 0,
+                    }
+
         asyncio.create_task(self.client.rpc.send_notification("danmaku.superchat", {
             "id": data.get("id", 0),
             "content": data.get("message", ""),
             "price": data.get("price", 0),
             "sender": {
-                "uid": data.get("uid", 0),
-                "username": data.get("uname", ""),
+                "uid": uid,
+                "username": uname,
                 "is_admin": False,
                 "is_vip": False,
-                "medal": None,
+                "guard_level": guard_level,
+                "guard_title": self._to_guard_title(guard_level),
+                "medal": medal_data,
+                "face": face,
             },
             "roomId": self.client._room_id,
+            "timestamp": int(time.time() * 1000),
         }))
 
 

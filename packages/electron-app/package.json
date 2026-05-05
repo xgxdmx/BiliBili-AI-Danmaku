@@ -1,6 +1,6 @@
 {
   "name": "bilibili-danmu-claw-electron-app",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "private": true,
   "description": "BiliBili AI弹幕姬",
@@ -13,8 +13,8 @@
     "preview": "electron-vite preview",
     "pack": "pnpm run build && pnpm run build:installer",
     "pack:mac": "pnpm run build && pnpm run build:installer:mac",
-    "build:installer": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --win nsis && node ../../scripts/finalize-electron-deploy.mjs",
-    "build:installer:mac": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --mac dmg zip && node ../../scripts/finalize-electron-deploy.mjs",
+    "build:installer": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --publish never --win nsis && node ../../scripts/finalize-electron-deploy.mjs",
+    "build:installer:mac": "pnpm run prepare-deploy && pnpm exec electron-builder --projectDir ./.deploy --publish never --mac zip && node ../../scripts/finalize-electron-deploy.mjs",
     "prepare-deploy": "node ../../scripts/prepare-electron-deploy.mjs"
   },
   "build": {
@@ -39,10 +39,9 @@
     },
     "mac": {
       "target": [
-        "dmg",
         "zip"
       ],
-      "icon": "resources/icon.ico",
+      "icon": "build/icon-mac.png",
       "category": "public.app-category.utilities"
     },
     "portable": {

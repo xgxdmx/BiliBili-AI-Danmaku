@@ -3,6 +3,8 @@
 ; Roaming 目录名（旧版/新版）
 !define ROAMING_DIR_OLD "bilibili-danmu-claw"
 !define ROAMING_DIR_NEW "BiliBiliDanmuClaw"
+!define ROAMING_DIR_PRODUCT "BiliBili AI弹幕姬"
+!define LOCAL_UPDATER_DIR "bilibili-danmu-claw-electron-app-updater"
 
 ; 卸载前先关闭主程序与 Python runtime 相关进程，避免 userData/缓存目录中的文件被占用，
 ; 导致“选择不保留配置后仍有残留文件”问题。
@@ -67,10 +69,13 @@
   RMDir /r "$APPDATA\\${APP_PACKAGE_NAME}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_NEW}"
+  RMDir /r "$APPDATA\\${ROAMING_DIR_PRODUCT}"
   ; 清理 LocalAppData 下的 Electron/Chromium 缓存残留
   RMDir /r "$LOCALAPPDATA\\${APP_PACKAGE_NAME}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_NEW}"
+  RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_PRODUCT}"
+  RMDir /r "$LOCALAPPDATA\\${LOCAL_UPDATER_DIR}"
 
   ; 恢复 shell 上下文
   ${if} $installMode == "all"
@@ -124,10 +129,13 @@
   RMDir /r "$APPDATA\\${APP_PACKAGE_NAME}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_NEW}"
+  RMDir /r "$APPDATA\\${ROAMING_DIR_PRODUCT}"
   ; LocalAppData 缓存也清理
   RMDir /r "$LOCALAPPDATA\\${APP_PACKAGE_NAME}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_NEW}"
+  RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_PRODUCT}"
+  RMDir /r "$LOCALAPPDATA\\${LOCAL_UPDATER_DIR}"
 
   ; ----- 恢复：把暂存的配置文件移回原目录 -----
   ; 目录 1 恢复

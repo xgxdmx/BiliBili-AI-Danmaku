@@ -5,13 +5,25 @@ Bilibili Danmaku Entry Point - 单文件入口
   python danmaku.py receiver    # 运行弹幕接收
   python danmaku.py sender      # 运行弹幕发送
   python danmaku.py send        # 发送单条弹幕 (需要额外参数)
+  python danmaku.py anchor      # 查询直播间主播信息 (需要 room_id)
+  python danmaku.py warmup      # 预载关键模块，降低首次连接冷启动开销
 """
 import sys
 import asyncio
+import json
+from dataclasses import asdict
+
+# Windows 打包态下，确保 stdout 以 UTF-8 输出，避免中文 JSON 被主进程按 utf-8 解析时乱码。
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python danmaku.py [receiver|sender|send]")
+        print("Usage: python danmaku.py [receiver|sender|send|anchor|warmup]")
         sys.exit(1)
 
     mode = sys.argv[1].lower()
@@ -31,9 +43,41 @@ if __name__ == "__main__":
         parser.add_argument("--sessdata", "-s", required=True)
         parser.add_argument("--bili-jct", "-b", required=True)
         parser.add_argument("--color", "-c", type=int, default=16777215)
-        args = parser.parse_args()
+        # 仅解析 mode 之后的参数，避免把 "send" 自身当作位置参数
+        args = parser.parse_args(sys.argv[2:])
         result = asyncio.run(send_danmaku(args.room, args.message, args.sessdata, args.bili_jct, args.color))
         print(result)
+    elif mode == "anchor":
+        from bilibili_core_api import fetch_anchor_profile
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("room_id", type=int)
+        parser.add_argument("--sessdata", default=None)
+        parser.add_argument("--bili-jct", dest="bili_jct", default=None)
+        parser.add_argument("--buvid3", default=None)
+        # 仅解析 mode 之后的参数，避免把 "anchor" 自身当作 room_id
+        args = parser.parse_args(sys.argv[2:])
+
+        profile = asyncio.run(fetch_anchor_profile(
+            args.room_id,
+            sessdata=args.sessdata,
+            bili_jct=args.bili_jct,
+            buvid3=args.buvid3,
+        ))
+        print(json.dumps(asdict(profile), ensure_ascii=False))
+    elif mode == "warmup" or mode == "__opencode_warmup__":
+        # 预载关键链路依赖，尽量把首次连接的 import/初始化成本前置。
+        # 注意：这里不建立真实连接，仅做模块装载与事件循环冷启动。
+        import receiver  # noqa: F401
+        import sender  # noqa: F401
+        import bilibili_core_api  # noqa: F401
+
+        async def _warmup() -> None:
+            await asyncio.sleep(0.05)
+
+        asyncio.run(_warmup())
+        print("ok")
     else:
         print(f"Unknown mode: {mode}")
         sys.exit(1)

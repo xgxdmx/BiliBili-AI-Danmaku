@@ -162,7 +162,11 @@ let statusTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
   try {
-    const config = await window.danmakuAPI?.getConfig();
+    const prefetched = await window.danmakuAPI?.consumeRoomEntryPrefetch?.();
+    const prefetchedConfig = prefetched?.data?.config;
+    const prefetchedStatus = prefetched?.data?.status;
+
+    const config = prefetchedConfig || (await window.danmakuAPI?.getConfig());
     if (config?.room) {
       if (config.room.roomId && Number(config.room.roomId) > 0) {
         form.roomId = Number(config.room.roomId);
@@ -177,10 +181,19 @@ onMounted(async () => {
       creds.buvid3 = config.credentials.buvid3 || "";
     }
     roomPrefsReady = true;
-    await fetchStatus();
+    if (prefetchedStatus) {
+      isConnected.value = prefetchedStatus.connected || false;
+      currentRoomId.value = prefetchedStatus.roomId || null;
+      if (isConnected.value && currentRoomId.value) {
+        form.roomId = currentRoomId.value;
+      }
+    } else {
+      await fetchStatus();
+    }
     statusTimer = setInterval(fetchStatus, 5000);
   } catch (e) {
-    }
+    void e;
+  }
 });
 
 onUnmounted(() => {
@@ -242,7 +255,13 @@ async function handleConnect() {
     isConnected.value = true;
     currentRoomId.value = Number(form.roomId);
   } catch (e: any) {
-    errorMsg.value = e?.message || "连接失败";
+    const message = String(e?.message || "连接失败");
+    if (message.includes("连接已取消") || message.includes("用户取消连接")) {
+      statusMsg.value = "已取消连接";
+      errorMsg.value = "";
+    } else {
+      errorMsg.value = message;
+    }
   } finally {
     isConnecting.value = false;
   }
@@ -251,12 +270,14 @@ async function handleConnect() {
 async function handleDisconnect() {
   try {
     await window.danmakuAPI?.stop({
-      sendBeforeStop: sendBeforeDisconnect.value,
-      message: disconnectMessage.value,
+      cancelStart: isConnecting.value,
+      sendBeforeStop: isConnecting.value ? false : sendBeforeDisconnect.value,
+      message: isConnecting.value ? "" : disconnectMessage.value,
     });
-    statusMsg.value = "已断开"; 
+    statusMsg.value = isConnecting.value ? "已取消连接" : "已断开";
     isConnected.value = false;
     currentRoomId.value = null;
+    isConnecting.value = false;
   } catch (e: any) { errorMsg.value = e?.message || "断开失败"; }
 }
 
@@ -298,7 +319,7 @@ async function openPopupLogin() {
         <button class="btn btn-accent" :disabled="isConnecting || !isConfigured || isConnected" @click="handleConnect">
           {{ isConnecting ? "连接中..." : "开始监听" }}
         </button>
-        <button class="btn btn-muted stop-listening-btn" :disabled="!isConnected" @click="handleDisconnect">停止监听</button>
+        <button class="btn btn-muted stop-listening-btn" :disabled="!isConnected && !isConnecting" @click="handleDisconnect">{{ isConnecting ? "取消连接" : "停止监听" }}</button>
       </div>
 
       <div class="field">

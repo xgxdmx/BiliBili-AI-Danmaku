@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, provide, onMounted, onUnmounted } from "vue";
+import { ref, provide, onMounted, onUnmounted, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
@@ -9,10 +9,23 @@ type CloseDialogAction = "tray" | "exit" | "cancel";
 
 // 程序关闭时清空缓存 - 启动时默认为空
 const STORAGE_KEY = "bilibili-danmaku-cache";
+const MAX_RUNTIME_LINES = 220;
+const MAX_PERSIST_LINES = 120;
+const DEDUP_SIGNATURE_MAX = 800;
+
+function clampCacheRows<T>(list: T[], max: number): T[] {
+  return Array.isArray(list) ? list.slice(0, max) : [];
+}
 
 function saveCache(source: any[], matched: any[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, matched }));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        source: clampCacheRows(source, MAX_PERSIST_LINES),
+        matched: clampCacheRows(matched, MAX_PERSIST_LINES),
+      }),
+    );
   } catch {}
 }
 
@@ -97,8 +110,19 @@ function applyTheme(resolved: "light" | "dark"): void {
 let unsubscribeThemeChanged: (() => void) | null = null;
 let unsubscribeCloseConfirmRequested: (() => void) | null = null;
 let unsubscribeAppQuitting: (() => void) | null = null;
+let unsubscribeDanmaku: (() => void) | null = null;
+let unsubscribeGift: (() => void) | null = null;
+let unsubscribeSuperChat: (() => void) | null = null;
+let beforeUnloadHandler: (() => void) | null = null;
 
 onMounted(async () => {
+  // 首屏可交互握手：优先通知主进程，避免被后续 IPC（如 getTheme）阻塞
+  void nextTick().then(() => {
+    requestAnimationFrame(() => {
+      window.danmakuAPI?.notifyRendererReady?.();
+    });
+  });
+
   try {
     const result = await window.danmakuAPI?.getTheme();
     if (result) applyTheme(result.resolved);
@@ -124,61 +148,109 @@ onMounted(async () => {
     quittingMessage.value = data?.message || "正在退出程序，请稍候…";
     quittingVisible.value = true;
   }) || null;
+
 });
 
 onUnmounted(() => {
   unsubscribeThemeChanged?.();
   unsubscribeCloseConfirmRequested?.();
   unsubscribeAppQuitting?.();
+  unsubscribeDanmaku?.();
+  unsubscribeGift?.();
+  unsubscribeSuperChat?.();
+  if (beforeUnloadHandler) {
+    window.removeEventListener("beforeunload", beforeUnloadHandler);
+    beforeUnloadHandler = null;
+  }
 });
 
 // ─── 弹幕缓存 ──────────────────────────────────────────────
 onMounted(() => {
-  window.addEventListener("beforeunload", () => {
+  beforeUnloadHandler = () => {
     saveCache(globalSourceDanmaku.value, globalMatchedDanmaku.value);
-  });
+  };
+  window.addEventListener("beforeunload", beforeUnloadHandler);
   
   const api = window.danmakuAPI;
   if (api) {
-    // 去重检查
-    const isDuplicate = (d: any) => globalSourceDanmaku.value.some(
-      existing => existing.content === d.content && existing.timestamp === d.timestamp
-    );
+    const recentSignatures = new Set<string>();
+    const recentSignatureQueue: string[] = [];
+
+    const rememberSignature = (signature: string) => {
+      if (!signature) return;
+      if (recentSignatures.has(signature)) return;
+      recentSignatures.add(signature);
+      recentSignatureQueue.push(signature);
+      if (recentSignatureQueue.length > DEDUP_SIGNATURE_MAX) {
+        const removed = recentSignatureQueue.shift();
+        if (removed) recentSignatures.delete(removed);
+      }
+    };
+
+    const buildDanmakuSignature = (d: any) => {
+      const ts = Number(d?.timestamp || 0);
+      const uid = Number(d?.sender?.uid ?? d?.uid ?? 0);
+      const content = String(d?.content || "");
+      return `${ts}|${uid}|${content}`;
+    };
+
+    const unshiftWithCap = (target: any[], row: any) => {
+      target.unshift(row);
+      if (target.length > MAX_RUNTIME_LINES) target.length = MAX_RUNTIME_LINES;
+    };
+
+    const resolveSender = (raw: any) => {
+      const candidate = raw?.sender ?? raw?.user_info ?? raw?.userInfo ?? raw?.user ?? {};
+      const username = candidate.username || candidate.uname || candidate.name || raw?.username || raw?.uname || "用户";
+      const uid = Number(candidate.uid ?? candidate.userId ?? raw?.uid ?? 0) || 0;
+      return {
+        uid,
+        username,
+        is_admin: Boolean(candidate.is_admin ?? candidate.isAdmin ?? false),
+        is_vip: Boolean(candidate.is_vip ?? candidate.isVip ?? false),
+        guard_level: candidate.guard_level ?? candidate.guardLevel,
+        guard_title: candidate.guard_title ?? candidate.guardTitle,
+        medal: candidate.medal ?? null,
+      };
+    };
+
+    // 去重检查：O(1) 签名集合，避免每条弹幕线性扫描数组
+    const isDuplicate = (d: any) => recentSignatures.has(buildDanmakuSignature(d));
     
     // Danmaku
-    api.onDanmaku((d: any) => {
+    unsubscribeDanmaku = api.onDanmaku((d: any) => {
       // 去重
       if (isDuplicate(d)) return;
-      globalSourceDanmaku.value.unshift(d);
-      if (globalSourceDanmaku.value.length > 500) globalSourceDanmaku.value.length = 500;
+      rememberSignature(buildDanmakuSignature(d));
+      unshiftWithCap(globalSourceDanmaku.value, d);
       if (d.isHighlighted || d.match) {
-        globalMatchedDanmaku.value.unshift(d);
-        if (globalMatchedDanmaku.value.length > 500) globalMatchedDanmaku.value.length = 500;
+        unshiftWithCap(globalMatchedDanmaku.value, d);
       }
       scheduleSave();
     });
     // Gift
-    api.onGift((d: any) => {
-      globalSourceDanmaku.value.unshift({
-        id: Date.now(), content: `🎁 ${d.sender?.username || "用户"} 送出 ${d.giftName} x${d.count}`,
-        sender: d.sender || { uid: 0, username: "用户", is_admin: false, is_vip: false },
+    unsubscribeGift = api.onGift((d: any) => {
+      const sender = resolveSender(d);
+      const giftRow = {
+        id: Date.now(), content: `🎁 ${sender.username} 送出 ${d.giftName} x${d.count}`,
+        sender,
         timestamp: d.timestamp || Date.now(), roomId: d.roomId || 0, color: 16761024, mode: 1, type: "gift",
-      });
-      if (globalSourceDanmaku.value.length > 500) globalSourceDanmaku.value.length = 500;
+      };
+      rememberSignature(buildDanmakuSignature(giftRow));
+      unshiftWithCap(globalSourceDanmaku.value, giftRow);
       scheduleSave();
     });
     // SuperChat
-    api.onSuperChat((d: any) => {
-      globalSourceDanmaku.value.unshift({
+    unsubscribeSuperChat = api.onSuperChat((d: any) => {
+      const sender = resolveSender(d);
+      const scRow = {
         id: d.id || Date.now(), content: `💎 SC ¥${d.price}: ${d.content}`,
-        sender: d.sender || { uid: 0, username: "用户", is_admin: false, is_vip: false },
+        sender,
         timestamp: d.timestamp || Date.now(), roomId: d.roomId || 0, color: 16744224, mode: 1, isHighlighted: true, type: "sc",
-      });
-      globalMatchedDanmaku.value.unshift({
-        id: d.id || Date.now(), content: `💎 SC ¥${d.price}: ${d.content}`,
-        sender: d.sender || { uid: 0, username: "用户", is_admin: false, is_vip: false },
-        timestamp: d.timestamp || Date.now(), roomId: d.roomId || 0, color: 16744224, mode: 1, isHighlighted: true, type: "sc",
-      });
+      };
+      rememberSignature(buildDanmakuSignature(scRow));
+      unshiftWithCap(globalSourceDanmaku.value, scRow);
+      unshiftWithCap(globalMatchedDanmaku.value, scRow);
       scheduleSave();
     });
   }
@@ -195,18 +267,30 @@ const isActive = (path: string) => {
   return route.path === path;
 };
 
+async function handleNavClick(path: string): Promise<void> {
+  if (path !== "/room") {
+    router.push(path);
+    return;
+  }
+
+  // 点击“直播间配置”只做路由，不触发任何同步/异步预热调用，确保交互链路最短。
+  await router.push(path);
+}
+
 const navItems = [
-  { path: "/", label: "弹幕监控", icon: "message" },
-  { path: "/room", label: "直播间", icon: "tv" },
+  { path: "/boundary", label: "直播间", icon: "tv" },
+  { path: "/danmaku", label: "弹幕监控", icon: "message" },
+  { path: "/room", label: "直播间配置", icon: "roomConfig" },
   { path: "/keywords", label: "关键词匹配", icon: "tag" },
   { path: "/models", label: "大模型配置", icon: "ai" },
-  { path: "/dev", label: "配置文件管理", icon: "settings" },
+  { path: "/dev", label: "配置管理", icon: "settings" },
   { path: "/about", label: "关于", icon: "about" },
 ];
 
 const icons: Record<string, string> = {
+  roomConfig: "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-5l-2 3-2-3H5a2 2 0 0 1-2-2V6m4 2h10m-8 4h6",
   message: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
-  tv: "M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7zm9 11v2m-4 0h8",
+  tv: "M9 5.6 7.2 4.3M15 5.6l1.8-1.3M4.8 7.2a2.8 2.8 0 0 1 2.8-2.8h8.8a2.8 2.8 0 0 1 2.8 2.8v7.6a2.8 2.8 0 0 1-2.8 2.8H7.6a2.8 2.8 0 0 1-2.8-2.8V7.2m4.2 3.4h.01m5.98 0h.01",
   tag: "M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0L22 12V2H12z",
   ai: "M1 20h4.2l.8-3h4l.8 3H15l-3.8-16H4.8L1 20Zm6-6 1.2-5h1.6l1.2 5ZM18 4h4v16h-4z",
   settings: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
@@ -216,45 +300,41 @@ const icons: Record<string, string> = {
 
 <template>
   <div class="app-shell">
-    <!-- 左侧竖直图标导航 (Clash 风格) -->
+    <!-- 左侧品牌化导航 -->
     <aside class="sidebar">
-      <div class="sidebar-logo" @click="router.push('/')">
-        <svg class="dream-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 16.5c2.2-3.8 5.6-6.2 10.2-7.2"/>
-          <path d="M6.2 19.2c2.8-2 5.8-3.2 9-3.6"/>
-          <path d="M15.8 4.6l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z"/>
-          <path d="M10.3 8.8l.45 1.1 1.1.45-1.1.45-.45 1.1-.45-1.1-1.1-.45 1.1-.45z"/>
-        </svg>
-      </div>
+      <button class="sidebar-brand" @click="router.push('/boundary')">
+        <span class="sidebar-brand-icon" aria-hidden="true">
+          <svg class="dream-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8.8 5.2l-2.1-1.9"></path>
+            <path d="M15.2 5.2l2.1-1.9"></path>
+            <rect x="4.6" y="6.4" width="14.8" height="11.2" rx="3.2"></rect>
+            <circle cx="9.7" cy="12" r="1" fill="currentColor" stroke="none"></circle>
+            <circle cx="14.3" cy="12" r="1" fill="currentColor" stroke="none"></circle>
+          </svg>
+        </span>
+        <span class="sidebar-brand-copy">
+          <strong class="sidebar-brand-title">BiliBili AI 弹幕姬</strong>
+          <span class="sidebar-brand-subtitle">BiliBili-AI-Danmaku</span>
+        </span>
+      </button>
 
       <nav class="sidebar-nav">
         <div class="nav-main">
           <button
-            v-for="item in navItems.filter(i => i.icon !== 'about')"
+            v-for="item in navItems"
             :key="item.path"
             :class="['nav-btn', { active: isActive(item.path) }]"
-            :title="item.label"
-            @click="router.push(item.path)"
+            @click="handleNavClick(item.path)"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path :d="icons[item.icon]"/>
-            </svg>
+            <span class="nav-btn-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path :d="icons[item.icon]"/>
+              </svg>
+            </span>
+            <span class="nav-btn-label">{{ item.label }}</span>
           </button>
         </div>
-        <div class="nav-divider"></div>
-        <div class="nav-footer">
-          <button
-            v-for="item in navItems.filter(i => i.icon === 'about')"
-            :key="item.path"
-            :class="['nav-btn', { active: isActive(item.path) }]"
-            :title="item.label"
-            @click="router.push(item.path)"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path :d="icons[item.icon]"/>
-            </svg>
-          </button>
-        </div>
+
       </nav>
 
     </aside>
@@ -295,6 +375,7 @@ const icons: Record<string, string> = {
         <p class="quitting-desc">{{ quittingMessage }}</p>
       </div>
     </div>
+
   </div>
 </template>
 

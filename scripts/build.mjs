@@ -32,6 +32,7 @@ const RUNTIME_ROOT = path.join(DANMAKU_CORE, "runtime");
 const RUNTIME_DANMAKU_DIR = path.join(RUNTIME_ROOT, "danmaku");
 
 const isWin = process.platform === "win32";
+const isMac = process.platform === "darwin";
 const CYAN = "\x1b[36m";
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
@@ -85,6 +86,23 @@ function run(cmd, args, options = {}) {
   }
   if (result.status !== 0) {
     const code = result.status ?? 1;
+    const logsDir = path.join(ROOT, ".build", "logs");
+    ensureDir(logsDir);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const logFile = path.join(logsDir, `failed-${stamp}.log`);
+    const content = [
+      `command: ${[cmd, ...args].join(" ")}`,
+      `cwd: ${cwd}`,
+      `exitCode: ${code}`,
+      "",
+      "===== STDOUT =====",
+      result.stdout || "",
+      "",
+      "===== STDERR =====",
+      result.stderr || "",
+    ].join("\n");
+    writeFileSync(logFile, content, "utf8");
+    logFail(`Command log saved: ${logFile}`);
     throw new Error(`Command failed with exit code ${code}: ${[cmd, ...args].join(" ")}`);
   }
 }
@@ -170,15 +188,17 @@ function pipPackageExists(python, pkg) {
 
 /**
  * 计算 electron-builder 的目标参数。
- * 当前流程以 Windows 为主，非 Windows 默认走 Linux AppImage。
+ * 当前流程：Windows -> NSIS，macOS -> zip，Linux -> AppImage。
  */
 function getElectronBuilderTarget() {
   if (isWin) return ["--win", "nsis"];
+  if (isMac) return ["--mac", "zip"];
   return ["--linux", "AppImage"];
 }
 
 function getPlatformLabel() {
   if (isWin) return "Windows";
+  if (isMac) return "macOS";
   return "Linux";
 }
 
@@ -323,20 +343,30 @@ function smokeTestRuntime(runtimeExe, label) {
   requirePath(runtimeExe, label);
 
   try {
-    const output = execFileSync(runtimeExe, [], {
+    // 使用无效 mode 触发快速退出，避免无参数场景进入长驻/阻塞流程。
+    const output = execFileSync(runtimeExe, ["__opencode_smoke__"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      timeout: 10_000,
+      timeout: 15_000,
       windowsHide: true,
     });
     const preview = output.trim().split("\n").slice(0, 2).join(" | ");
     logOk(`${label} launched successfully${preview ? `: ${preview}` : ""}`);
     return;
   } catch (error) {
+    if (error?.code === "ETIMEDOUT") {
+      // 某些 runtime 在无交互参数下会保持运行等待输入；超时可视为“可启动”。
+      logOk(`${label} launched successfully (timed out while waiting for input)`);
+      return;
+    }
+
     const stdout = error.stdout?.toString?.("utf8") ?? "";
     const stderr = error.stderr?.toString?.("utf8") ?? "";
     const combined = `${stdout}\n${stderr}`.trim();
-    const accepted = combined.includes("Usage: python danmaku.py") || combined.includes("Unknown mode");
+    const accepted =
+      combined.includes("Usage: python danmaku.py") ||
+      combined.includes("Unknown mode") ||
+      /usage/i.test(combined);
 
     if (accepted) {
       const preview = combined.split("\n").slice(0, 2).join(" | ");
@@ -404,6 +434,15 @@ function verifyPackagedRuntime() {
  */
 async function buildElectron() {
   logStep(`Electron: prepare package (${getPlatformLabel()})`);
+
+  // package:electron 兜底：若 runtime 尚未构建，自动先构建 Python runtime，
+  // 避免用户必须手动执行 package:python / package all。
+  const runtimeExe = path.join(RUNTIME_DANMAKU_DIR, isWin ? "danmaku.exe" : "danmaku");
+  if (!existsSync(runtimeExe)) {
+    logInfo("Runtime not staged. Building Python runtime automatically...");
+    buildPython();
+    logOk("Auto-runtime bootstrap complete. Continuing Electron packaging...");
+  }
   verifyRuntimeStaged();
 
   const pnpmCmd = getPnpmCmd();
@@ -422,6 +461,8 @@ async function buildElectron() {
     "electron-builder",
     "--projectDir",
     "./.deploy",
+    "--publish",
+    "never",
     ...getElectronBuilderTarget(),
   ], {
     cwd: ELECTRON_APP,

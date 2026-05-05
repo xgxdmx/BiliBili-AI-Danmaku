@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { computed, inject, ref } from "vue";
 
 interface MatchedItem {
   id: number;
@@ -14,20 +14,19 @@ interface MatchedItem {
 
 /* danmakuAPI type is declared globally via preload */
 
-const matchedList = ref<MatchedItem[]>([]);
+const store = inject<any>("danmakuStore");
+const globalMatchedDanmaku = (store?.matched ?? ref<MatchedItem[]>([])) as { value: MatchedItem[] };
 
-let cleanups: (() => void)[] = [];
-onMounted(() => {
-  const api = window.danmakuAPI;
-  if (!api) return;
-  cleanups.push(api.onDanmaku((d: any) => {
-    if (d.isHighlighted || d.match) {
-      matchedList.value.unshift({ ...d, matchedRule: d.match?.rule?.id, matchedGroups: d.match?.groups });
-      if (matchedList.value.length > 500) matchedList.value.length = 500;
-    }
+/**
+ * 复用全局 matched 数据，避免本页再维护一份独立缓冲造成双份内存占用。
+ */
+const matchedList = computed(() => {
+  return globalMatchedDanmaku.value.map((d: any) => ({
+    ...d,
+    matchedRule: d.match?.rule?.id,
+    matchedGroups: d.match?.groups,
   }));
 });
-onUnmounted(() => { cleanups.forEach(fn => fn()); cleanups = []; });
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString("zh-CN", { hour12: false });
