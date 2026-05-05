@@ -232,6 +232,20 @@
   color: #6f7fa8;
 }
 
+/* 夜间主题：关键词空态卡片改为深色语义，避免亮白突兀 */
+[data-theme="dark"] .hit-empty-state {
+  background: #1b2238;
+  border-color: #364667;
+}
+
+[data-theme="dark"] .hit-empty-title {
+  color: #d5ddf2;
+}
+
+[data-theme="dark"] .hit-empty-desc {
+  color: #9aa9cb;
+}
+
 .card-head small {
   color: #7f8fb8;
 }
@@ -327,6 +341,21 @@
 }
 
 .pill.jump-latest:hover {
+  color: #2d7dff;
+  background: #e3ecff;
+}
+
+.pill.clear-stream {
+  border: none;
+  cursor: pointer;
+  min-height: 26px;
+  padding: 2px 8px;
+  color: #4f6da8;
+  background: #e9eef9;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.pill.clear-stream:hover {
   color: #2d7dff;
   background: #e3ecff;
 }
@@ -801,6 +830,14 @@
 .records-card .card-head h3 {
   font-size: clamp(15px, 1.02vw, 18px);
   letter-spacing: 0.3px;
+}
+
+/* 夜间主题：标题区文本提亮为灰蓝，避免贴近背景 */
+[data-theme="dark"] .card-head h3,
+[data-theme="dark"] .queue-card .card-head h3,
+[data-theme="dark"] .records-card .card-head h3,
+[data-theme="dark"] .hit-card .card-head h3 {
+  color: #7f8fb8;
 }
 
 .queue-card .action-link,

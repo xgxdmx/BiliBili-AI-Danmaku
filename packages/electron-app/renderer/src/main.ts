@@ -15,8 +15,9 @@ import "./styles/global.css";
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: "/", component: BoundaryView },
     { path: "/boundary", component: BoundaryView },
-    { path: "/", component: DanmakuView },
+    { path: "/danmaku", component: DanmakuView },
     { path: "/room", component: RoomView },
     { path: "/keywords", component: KeywordsView },
     { path: "/models", component: ModelSettingsView },
