@@ -101,14 +101,7 @@ export function registerConfigIpcHandlers(context: MainAppContext): void {
 
   /** 读取完整配置 */
   ipcMain.handle("config:get", async () => {
-    const t0 = Date.now();
-    const config = getConfig();
-    logger.log("[Perf] config:get", {
-      durationMs: Date.now() - t0,
-      hasRoomId: Boolean(config?.room?.roomId),
-      hasCredentials: Boolean(config?.credentials?.sessdata),
-    });
-    return config;
+    return getConfig();
   });
 
   /** 按路径设置配置值（如 "aiModel.prompt"） */

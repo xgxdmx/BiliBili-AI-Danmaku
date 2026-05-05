@@ -161,26 +161,12 @@ async function fetchStatus() {
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
-  const mountAt = Date.now();
-  window.danmakuAPI?.perfMark?.({ name: "room_view_mounted", at: mountAt });
   try {
-    const prefetchStart = Date.now();
     const prefetched = await window.danmakuAPI?.consumeRoomEntryPrefetch?.();
-    window.danmakuAPI?.perfMark?.({
-      name: "room_prefetch_done",
-      at: Date.now(),
-      detail: { costMs: Date.now() - prefetchStart, hit: Boolean(prefetched?.data) },
-    });
     const prefetchedConfig = prefetched?.data?.config;
     const prefetchedStatus = prefetched?.data?.status;
 
-    const configStart = Date.now();
     const config = prefetchedConfig || (await window.danmakuAPI?.getConfig());
-    window.danmakuAPI?.perfMark?.({
-      name: "room_config_ready",
-      at: Date.now(),
-      detail: { costMs: Date.now() - configStart, fromPrefetch: Boolean(prefetchedConfig) },
-    });
     if (config?.room) {
       if (config.room.roomId && Number(config.room.roomId) > 0) {
         form.roomId = Number(config.room.roomId);
@@ -202,26 +188,11 @@ onMounted(async () => {
         form.roomId = currentRoomId.value;
       }
     } else {
-      const statusStart = Date.now();
       await fetchStatus();
-      window.danmakuAPI?.perfMark?.({
-        name: "room_status_ready",
-        at: Date.now(),
-        detail: { costMs: Date.now() - statusStart, fromPrefetch: false },
-      });
     }
     statusTimer = setInterval(fetchStatus, 5000);
-    window.danmakuAPI?.perfMark?.({
-      name: "room_view_data_ready",
-      at: Date.now(),
-      detail: { totalCostMs: Date.now() - mountAt },
-    });
   } catch (e) {
-    window.danmakuAPI?.perfMark?.({
-      name: "room_view_mount_error",
-      at: Date.now(),
-      detail: { error: String(e) },
-    });
+    void e;
   }
 });
 

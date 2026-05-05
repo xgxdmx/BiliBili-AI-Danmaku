@@ -273,17 +273,8 @@ async function handleNavClick(path: string): Promise<void> {
     return;
   }
 
-  const clickAt = Date.now();
-  window.danmakuAPI?.perfMark?.({ name: "room_nav_click", at: clickAt, detail: { from: route.path } });
-
   // 点击“直播间配置”只做路由，不触发任何同步/异步预热调用，确保交互链路最短。
   await router.push(path);
-
-  window.danmakuAPI?.perfMark?.({
-    name: "room_nav_route_done",
-    at: Date.now(),
-    detail: { costMs: Date.now() - clickAt },
-  });
 }
 
 const navItems = [

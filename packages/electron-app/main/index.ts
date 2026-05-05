@@ -952,11 +952,8 @@ function registerIpcHandlers(): void {
 
   /** 查询弹幕服务连接状态 */
   ipcMain.handle("danmaku:getStatus", async () => {
-    const t0 = Date.now();
     if (!danmakuService) return { connected: false, roomId: null };
-    const status = danmakuService.getStatus();
-    logger.log("[Perf] danmaku:getStatus", { durationMs: Date.now() - t0, connected: status.connected });
-    return status;
+    return danmakuService.getStatus();
   });
 
   /**
@@ -1043,22 +1040,9 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("app:consumeRoomEntryPrefetch", async () => {
-    const t0 = Date.now();
     const data = roomEntryPrefetchCache;
     roomEntryPrefetchCache = null;
-    logger.log("[Perf] app:consumeRoomEntryPrefetch", {
-      durationMs: Date.now() - t0,
-      hit: Boolean(data),
-    });
     return { status: "ok", data };
-  });
-
-  ipcMain.removeAllListeners("app:perfMark");
-  ipcMain.on("app:perfMark", (_event, payload) => {
-    const name = String(payload?.name || "unknown");
-    const at = Number(payload?.at || Date.now());
-    const detail = payload?.detail && typeof payload.detail === "object" ? payload.detail : undefined;
-    logger.log("[PerfMark]", { name, at, detail });
   });
 
   ipcMain.removeAllListeners("app:rendererReady");
