@@ -27,8 +27,6 @@ if sys.platform == "win32":
 try:
     import aiohttp
     from blivedm import BLiveClient
-    # 输出启动确认
-    print(json.dumps({"jsonrpc": "2.0", "method": "system.ready", "params": {"pid": os.getpid()}}))
 except ImportError:
     print(json.dumps({
         "jsonrpc": "2.0",
@@ -69,13 +67,26 @@ class JsonRpcServer:
     """
 
     def __init__(self):
+        """初始化 JSON-RPC 服务器状态。
+
+        思路：维护 method 注册表与运行标志；所有请求分发都基于该表完成，
+        保持协议层与业务层解耦。
+        """
         self._methods: dict[str, Callable] = {}
         self._running = False
 
     def register_method(self, name: str, handler: Callable):
+        """注册 RPC 方法处理器。
+
+        思路：以字符串方法名映射到可调用对象，支持同步/异步处理器统一分发。
+        """
         self._methods[name] = handler
 
     async def send_notification(self, method: str, params: dict | None = None):
+        """发送 JSON-RPC 通知消息（无 id）。
+
+        思路：stdout 只写协议帧，所有上游状态事件统一走该出口，确保单一通道可观测。
+        """
         notification: dict = {"jsonrpc": "2.0", "method": method}
         if params:
             notification["params"] = params
@@ -83,6 +94,10 @@ class JsonRpcServer:
         sys.stdout.flush()
 
     async def send_response(self, id_: str, result: Any = None, error: dict | None = None):
+        """发送 JSON-RPC 响应消息（带 id）。
+
+        思路：按协议互斥写入 result/error，保证调用方能稳定解析成功与失败分支。
+        """
         response: dict = {"jsonrpc": "2.0", "id": id_}
         if error:
             response["error"] = error
@@ -107,6 +122,8 @@ class JsonRpcServer:
                 try:
                     line = sys.stdin.readline()
                     if not line:
+                        self._running = False
+                        q.put_nowait("__STDIN_EOF__")
                         break
                     stripped = line.strip()
                     if stripped:
@@ -124,6 +141,8 @@ class JsonRpcServer:
             try:
                 # 非阻塞检查队列
                 data = q.get_nowait()
+                if data == "__STDIN_EOF__":
+                    break
                 await self._handle_message(data)
             except queue.Empty:
                 await asyncio.sleep(0.1)
@@ -131,6 +150,11 @@ class JsonRpcServer:
                 await self.send_notification("system.error", {"message": f"Read error: {e}"})
 
     async def _handle_message(self, raw: str):
+        """解析并分发单条 JSON-RPC 输入。
+
+        思路：先做 JSON 与 method 有效性校验，再按注册表路由；
+        任何异常都转换为规范错误响应，避免读取循环被打断。
+        """
         # 1) 原始文本 -> JSON。
         #    失败时直接发送 system.error，避免抛异常中断读取循环。
         try:
@@ -169,11 +193,19 @@ class JsonRpcServer:
                 await self.send_response(msg_id, error={"code": -32603, "message": str(e)})
 
     async def start(self):
+        """启动 RPC 读取循环。
+
+        思路：先发送连接就绪事件，再进入持续读循环；读循环退出即代表服务结束。
+        """
         self._running = True
         await self.send_notification("connection.connected", {"pid": __import__("os").getpid()})
         await self._read_loop()
 
     async def stop(self):
+        """请求停止 RPC 循环。
+
+        思路：仅切换运行标志，不在此函数中做重资源回收，由上层 shutdown 统一编排。
+        """
         self._running = False
 
 
@@ -183,12 +215,52 @@ class BilibiliDanmakuClient:
     """基于 blivedm 的B站弹幕客户端"""
 
     def __init__(self, rpc: JsonRpcServer):
+        """初始化弹幕客户端容器。
+
+        思路：缓存连接态、房间号、凭证与事件循环引用，
+        为后续 start/stop 与跨线程通知提供统一状态面。
+        """
         self.rpc = rpc
         self._client: Optional[BLiveClient] = None
         self._room_id: Optional[int] = None
         self._credentials: dict = {}
         self._connected = False
         self._session: Optional[aiohttp.ClientSession] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """绑定主事件循环引用。
+
+        思路：blivedm 回调可能不在 asyncio 线程，后续通知发送必须回投到该 loop。
+        """
+        self._loop = loop
+
+    def emit_notification_threadsafe(self, method: str, params: dict) -> None:
+        """线程安全地发送 RPC 通知。
+
+        思路：使用 run_coroutine_threadsafe 把发送任务提交到主 loop，
+        规避回调线程直接 create_task 的运行时错误风险。
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+        try:
+            future = asyncio.run_coroutine_threadsafe(self.rpc.send_notification(method, params), loop)
+
+            def _on_done(fut):
+                """消费线程安全 Future 的完成结果。
+
+                思路：主动读取 fut.result() 触发潜在异常，再写 stderr，
+                防止后台任务失败被静默吞掉。
+                """
+                try:
+                    fut.result()
+                except Exception as e:
+                    log_stderr(f"[Notify error] {method}: {e}")
+
+            future.add_done_callback(_on_done)
+        except Exception as e:
+            log_stderr(f"[Notify schedule error] {method}: {e}")
 
     async def start(self, params: dict) -> dict:
         """启动监听。
@@ -281,6 +353,11 @@ class BilibiliDanmakuClient:
             return {"status": "error", "error": error_msg}
 
     async def stop(self, params: dict) -> dict:
+        """停止弹幕监听并回收会话资源。
+
+        思路：先停 blivedm 客户端并广播 disconnected，再关闭 aiohttp session，
+        保证上游先感知状态变化，再执行底层资源回收。
+        """
         if self._client:
             # blivedm 新版本 stop() 是同步方法，这里直接调用即可
             self._client.stop()  # 同步停止
@@ -293,6 +370,10 @@ class BilibiliDanmakuClient:
         return {"status": "stopped"}
 
     async def get_status(self, params: dict) -> dict:
+        """返回当前连接状态快照。
+
+        思路：提供轻量只读接口给上游轮询，不触发任何副作用。
+        """
         return {"connected": self._connected, "roomId": self._room_id}
 
 
@@ -307,9 +388,17 @@ class _DanmakuHandler:
     """
 
     def __init__(self, client: BilibiliDanmakuClient):
+        """注入上层客户端引用。
+
+        思路：事件处理器只做协议解析，所有通知发送统一回调到 client。
+        """
         self.client = client
 
     def _to_guard_title(self, guard_level: int) -> str:
+        """将大航海等级数字映射为中文称号。
+
+        思路：保持输出口径稳定，前端无需重复维护等级文案映射表。
+        """
         if guard_level == 1:
             return "总督"
         if guard_level == 2:
@@ -545,7 +634,7 @@ class _DanmakuHandler:
                 "color": 16777215,
                 "mode": 1,
             }
-            asyncio.create_task(self.client.rpc.send_notification("danmaku.received", data))
+            self.client.emit_notification_threadsafe("danmaku.received", data)
         except Exception as e:
             log_stderr(f"[Danmaku parse error] {e}")
 
@@ -559,7 +648,7 @@ class _DanmakuHandler:
         medal_data = self._extract_medal(command, {"medal": data_payload.get("medal_info")}, [])
         ts = int(time.time() * 1000)
         # 统一转换成前端消费结构；字段名尽量稳定（giftId/giftName/count/sender）
-        asyncio.create_task(self.client.rpc.send_notification("danmaku.gift", {
+        self.client.emit_notification_threadsafe("danmaku.gift", {
             "giftId": data_payload.get("giftId", 0),
             "giftName": data_payload.get("giftName", ""),
             "count": data_payload.get("num", 1),
@@ -574,7 +663,7 @@ class _DanmakuHandler:
             },
             "roomId": self.client._room_id,
             "timestamp": ts,
-        }))
+        })
 
     def _handle_superchat(self, command):
         """处理 SuperChat（SUPER_CHAT_MESSAGE）。
@@ -637,7 +726,7 @@ class _DanmakuHandler:
                         "color": 0,
                     }
 
-        asyncio.create_task(self.client.rpc.send_notification("danmaku.superchat", {
+        self.client.emit_notification_threadsafe("danmaku.superchat", {
             "id": data.get("id", 0),
             "content": data.get("message", ""),
             "price": data.get("price", 0),
@@ -653,7 +742,7 @@ class _DanmakuHandler:
             },
             "roomId": self.client._room_id,
             "timestamp": int(time.time() * 1000),
-        }))
+        })
 
 
 # ─── Danmaku Sender ─────────────────────────────────────────
@@ -664,15 +753,28 @@ class DanmakuSender:
     SEND_API = "https://api.live.bilibili.com/msg/send"
 
     def __init__(self, rpc: JsonRpcServer):
+        """初始化发送器会话与 RPC 引用。
+
+        思路：发送器作为 receiver 内部能力复用，与独立 sender.py 保持同协议行为。
+        """
         self.rpc = rpc
         self._session: Optional[aiohttp.ClientSession] = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
+        """获取可复用 HTTP 会话。
+
+        思路：连接复用优先，避免每次 send 都重建 TCP/TLS 会话。
+        """
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
 
     async def send(self, params: dict) -> dict:
+        """调用 B 站发送接口发出弹幕。
+
+        思路：先做参数必填校验，再按 B 站接口约定组包并解析响应；
+        非 0 code 一律转为异常，交由上游统一处理。
+        """
         room_id = params.get("roomId")
         msg = sanitize_utf8_text(params.get("msg", ""))
         sessdata = params.get("sessdata", "")
@@ -716,6 +818,10 @@ class DanmakuSender:
             return {"status": "sent", "msg": msg}
 
     async def close(self):
+        """关闭发送器会话。
+
+        思路：保证退出路径可幂等调用，避免未关闭连接在进程退出时泄漏。
+        """
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -723,8 +829,15 @@ class DanmakuSender:
 # ─── Main ────────────────────────────────────────────────────
 
 async def main():
+    """receiver 进程主入口。
+
+    思路：完成 RPC/客户端装配、方法注册与信号收口，
+    然后进入 rpc.start 读循环，直到收到关闭信号或 stdin 结束。
+    """
     rpc = JsonRpcServer()
     danmaku_client = BilibiliDanmakuClient(rpc)
+    loop = asyncio.get_running_loop()
+    danmaku_client.set_event_loop(loop)
     danmaku_sender = DanmakuSender(rpc)
 
     rpc.register_method("start", danmaku_client.start)
@@ -732,12 +845,27 @@ async def main():
     rpc.register_method("getStatus", danmaku_client.get_status)
     rpc.register_method("sendDanmaku", danmaku_sender.send)
 
-    loop = asyncio.get_event_loop()
+    # 启动确认放在运行时，避免模块导入副作用污染 warmup/stdout。
+    await rpc.send_notification("system.ready", {"pid": os.getpid()})
+
+    shutdown_started = False
+
+    def request_shutdown() -> None:
+        """请求一次性关闭流程（防重入）。
+
+        思路：信号可能重复触发，使用布尔门闩保证 shutdown 只调度一次。
+        """
+        nonlocal shutdown_started
+        if shutdown_started:
+            return
+        shutdown_started = True
+        loop.call_soon_threadsafe(lambda: asyncio.create_task(shutdown(rpc, danmaku_client, danmaku_sender)))
+
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown(rpc, danmaku_client, danmaku_sender)))
+            loop.add_signal_handler(sig, request_shutdown)
         except NotImplementedError:
-            pass
+            signal.signal(sig, lambda _s, _f: request_shutdown())
 
     try:
         await rpc.start()
@@ -746,6 +874,11 @@ async def main():
 
 
 async def shutdown(rpc, client, sender):
+    """统一执行 receiver 进程的优雅关闭。
+
+    思路：按“停弹幕客户端 -> 关发送会话 -> 停 RPC”顺序收口，
+    让连接状态与资源释放顺序可预期。
+    """
     await client.stop({})
     await sender.close()
     await rpc.stop()

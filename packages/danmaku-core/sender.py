@@ -31,9 +31,18 @@ class BilibiliSender:
     SEND_API = "https://api.live.bilibili.com/msg/send"
 
     def __init__(self):
+        """初始化发送器会话状态。
+
+        思路：延迟创建 aiohttp 会话，只有首次发送时才真正建立连接，
+        以减少短生命周期进程的启动开销。
+        """
         self._session: Optional[aiohttp.ClientSession] = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
+        """获取可复用的 HTTP 会话。
+
+        思路：优先复用现有 session，关闭后再重建，避免每条弹幕都重复握手。
+        """
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
@@ -104,6 +113,11 @@ class BilibiliSender:
             }
 
     async def close(self):
+        """安全关闭底层 HTTP 会话。
+
+        思路：只在 session 存在且未关闭时执行 close，保证幂等收口，
+        便于在 finally 或异常路径统一调用。
+        """
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -150,6 +164,10 @@ def parse_args():
 
 
 async def main():
+    """CLI 主入口：发送单条弹幕后输出 JSON 结果。
+
+    思路：命令行层只做参数编排与异常转码，核心发送逻辑统一复用 send_danmaku。
+    """
     args = parse_args()
     try:
         result = await send_danmaku(

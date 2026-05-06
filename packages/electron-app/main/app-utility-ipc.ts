@@ -45,6 +45,19 @@ function hasNewerVersion(currentVersion: string, latestVersion: string): boolean
   return false;
 }
 
+function isSafeExternalUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const raw = value.trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    const protocol = parsed.protocol.toLowerCase();
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 拉取 GitHub latest release 并生成前端可直接消费的更新结果。
  */
@@ -91,6 +104,12 @@ export function registerAppUtilityIpcHandlers(): void {
   });
 
   ipcMain.handle("shell:openExternal", async (_event, url: string) => {
+    if (!isSafeExternalUrl(url)) {
+      return {
+        status: "error",
+        message: "仅允许打开 http/https 链接",
+      };
+    }
     try {
       await shell.openExternal(url);
       return { status: "ok" };

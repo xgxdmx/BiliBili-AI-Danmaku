@@ -380,7 +380,20 @@ export class AIRelayManager extends EventEmitter {
     const item: QueueItem = { seq: ++this.seq, danmaku, attempts: 0 };
     this.queue.push(item);
     if (this.queue.length > this.config.maxPending) {
-      this.lastError = `排队数 ${this.queue.length} 超过设定上限 ${this.config.maxPending}，已继续排队以避免丢弹幕`;
+      const overflow = this.queue.length - this.config.maxPending;
+      if (overflow > 0) {
+        this.queue.splice(0, overflow);
+        this.clearedCount += overflow;
+        this.lastError = `排队数超过上限 ${this.config.maxPending}，已丢弃最旧 ${overflow} 条以保护主进程内存`;
+        this.pushDecision({
+          id: `overflow-${Date.now()}`,
+          timestamp: Date.now(),
+          input: "",
+          output: "",
+          action: "cleared",
+          reason: `排队溢出，已丢弃最旧 ${overflow} 条待处理消息`,
+        });
+      }
     }
     this.emitStatus();
     void this.processQueue();

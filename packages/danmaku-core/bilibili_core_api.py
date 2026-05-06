@@ -41,6 +41,11 @@ def _make_credential(
     bili_jct: str | None = None,
     buvid3: str | None = None,
 ) -> Credential:
+    """构建 bilibili-api 凭证对象。
+
+    思路：把上游传入的可选 cookie 字段统一收敛到 Credential，
+    后续所有 API 调用只依赖一个对象，减少参数分散与重复拼接。
+    """
     return Credential(sessdata=sessdata, bili_jct=bili_jct, buvid3=buvid3)
 
 
@@ -51,6 +56,11 @@ async def fetch_anchor_profile(
     bili_jct: str | None = None,
     buvid3: str | None = None,
 ) -> AnchorProfile:
+    """查询直播间主播资料并返回统一结构。
+
+    思路：先从直播间接口拿 room/anchor 基础信息；字段缺失时再回退用户接口补齐；
+    最后把头像下载为 data URL（失败不阻断主流程）并组装为 AnchorProfile。
+    """
     credential = _make_credential(sessdata=sessdata, bili_jct=bili_jct, buvid3=buvid3)
     room = live.LiveRoom(room_display_id=room_id, credential=credential)
 
@@ -121,6 +131,11 @@ async def fetch_anchor_profile(
 
 
 async def _main() -> None:
+    """命令行入口：解析参数并输出 JSON。
+
+    思路：仅负责 CLI 参数处理与标准输出，核心业务委托给 fetch_anchor_profile，
+    便于该模块同时复用于 danmaku.py 的 anchor 子命令与独立调试。
+    """
     parser = argparse.ArgumentParser(description="Test Bilibili room anchor profile API")
     parser.add_argument("room_id", type=int, help="直播间号（短号或长号）")
     parser.add_argument("--sessdata", default=None)

@@ -77,6 +77,11 @@ if __name__ == "__main__":
         import bilibili_core_api  # noqa: F401
 
         async def _warmup() -> None:
+            """执行轻量预热任务。
+
+            思路：通过一次极短事件循环调度，让 asyncio/依赖模块完成冷启动初始化，
+            不触发真实网络连接与 JSON-RPC 副作用。
+            """
             await asyncio.sleep(0.05)
 
         asyncio.run(_warmup())
