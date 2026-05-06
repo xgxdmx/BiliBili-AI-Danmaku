@@ -47,7 +47,7 @@ const __dirname = dirname(__filename);
 // false = 禁用上述快捷键
 // 如需关闭，直接把 true 改成 false 即可。
 // ============================================================
-const ENABLE_DEVTOOLS_SHORTCUT = true;
+const ENABLE_DEVTOOLS_SHORTCUT = false;
 
 interface AnchorProfilePayload {
   room_id_input: number;
