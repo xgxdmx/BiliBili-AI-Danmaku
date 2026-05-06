@@ -272,6 +272,7 @@ let cachedDashboardRoomProfile: DashboardRoomProfilePayload | null = null;
 let cachedDashboardRoomProfileRoomId = 0;
 let danmakuRuntimeWarmed = false;
 let rendererReadyNotified = false;
+let rendererReadyListenerRegistered = false;
 let delayedWarmupTimer: ReturnType<typeof setTimeout> | null = null;
 let idleWarmupPollTimer: ReturnType<typeof setInterval> | null = null;
 let forcedWarmupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1045,18 +1046,20 @@ function registerIpcHandlers(): void {
     return { status: "ok", data };
   });
 
-  ipcMain.removeAllListeners("app:rendererReady");
-  ipcMain.on("app:rendererReady", () => {
-    if (rendererReadyNotified) return;
-    rendererReadyNotified = true;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
+  if (!rendererReadyListenerRegistered) {
+    rendererReadyListenerRegistered = true;
+    ipcMain.on("app:rendererReady", () => {
+      if (rendererReadyNotified) return;
+      rendererReadyNotified = true;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
 
-    // 渲染层可交互后采用“延迟 + 空闲 + 强制兜底”三段式后台预热。
-    scheduleBackgroundWarmup();
-  });
+      // 渲染层可交互后采用“延迟 + 空闲 + 强制兜底”三段式后台预热。
+      scheduleBackgroundWarmup();
+    });
+  }
 }
 
 // ─── 单实例限制 ────────────────────────────────────────────
@@ -1075,7 +1078,6 @@ if (!gotTheLock) {
     if (!win || win.isDestroyed()) {
       // 窗口不存在（可能被关到托盘后窗口已销毁），重新创建
       createWindow();
-      registerIpcHandlers();
       return;
     }
     // 窗口存在：从最小化/隐藏状态恢复并聚焦到前台

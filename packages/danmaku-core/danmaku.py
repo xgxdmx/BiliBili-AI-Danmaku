@@ -69,11 +69,19 @@ if __name__ == "__main__":
     elif mode == "warmup" or mode == "__opencode_warmup__":
         # 预载关键链路依赖，尽量把首次连接的 import/初始化成本前置。
         # 注意：这里不建立真实连接，仅做模块装载与事件循环冷启动。
-        import receiver  # noqa: F401
-        import sender  # noqa: F401
+        # 关键点：不要 import receiver/sender 入口模块（其顶层有 stdio/JSON-RPC 副作用），
+        # 否则会在 warmup 场景触发不必要的 stdout/stderr 行为。
+        import aiohttp  # noqa: F401
+        import blivedm  # noqa: F401
+        import bilibili_api  # noqa: F401
         import bilibili_core_api  # noqa: F401
 
         async def _warmup() -> None:
+            """执行轻量预热任务。
+
+            思路：通过一次极短事件循环调度，让 asyncio/依赖模块完成冷启动初始化，
+            不触发真实网络连接与 JSON-RPC 副作用。
+            """
             await asyncio.sleep(0.05)
 
         asyncio.run(_warmup())

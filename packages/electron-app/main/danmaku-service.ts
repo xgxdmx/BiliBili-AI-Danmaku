@@ -4,7 +4,7 @@
 // ============================================================
 
 import { EventEmitter } from "events";
-import { spawn, spawnSync, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import { randomUUID } from "crypto";
 import { join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
@@ -28,10 +28,11 @@ function killBundledExeByExactPathSync(executablePath: string): void {
   ].join(" ");
 
   try {
-    spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    const ps = spawn("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
       windowsHide: true,
       stdio: "ignore",
     });
+    ps.unref();
   } catch {
     // 忽略查询/权限异常，不中断主流程
   }
@@ -71,7 +72,7 @@ function killBundledExeByExactPathAsync(executablePath: string): Promise<void> {
  * Windows: 返回“可执行路径完全匹配”的 danmaku.exe/run.exe 进程数量。
  * 返回 null 表示查询失败。
  */
-function countBundledExeByExactPathSync(executablePath: string): number | null {
+function countBundledExeByExactPathAsync(executablePath: string): Promise<number | null> {
   const escapedPath = executablePath.replace(/'/g, "''");
   const exeName = basename(executablePath).replace(/'/g, "''");
   const script = [
@@ -82,19 +83,30 @@ function countBundledExeByExactPathSync(executablePath: string): number | null {
     "@($matches).Count",
   ].join(" ");
 
-  try {
-    const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8",
-    });
-    const output = String(result.stdout || "").trim();
-    if (!output) return null;
-    const count = Number(output);
-    return Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null;
-  } catch {
-    return null;
-  }
+  return new Promise((resolve) => {
+    try {
+      const ps = spawn("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      let stdout = "";
+      ps.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      ps.once("error", () => resolve(null));
+      ps.once("close", () => {
+        const output = String(stdout || "").trim();
+        if (!output) {
+          resolve(null);
+          return;
+        }
+        const count = Number(output);
+        resolve(Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
 }
 
 /**
@@ -221,7 +233,7 @@ export async function verifyBundledRunExeResidualsAfterCleanup(waitMs = 1200): P
     await new Promise((resolve) => setTimeout(resolve, waitMs));
 
     for (const runPath of candidates) {
-      const count = countBundledExeByExactPathSync(runPath);
+      const count = await countBundledExeByExactPathAsync(runPath);
       if (count === null) {
         logger.warn("[ExitCheck] runtime residual check unavailable", { runPath, waitMs });
         continue;
@@ -664,7 +676,7 @@ export class DanmakuService extends EventEmitter {
     // Windows + PyInstaller(onefile) 场景下，父进程退出后子进程仍可能残留。
     // 这里按原始 PID 再做一次进程树清理兜底（不存在时 taskkill 会返回非零，可忽略）。
     if (process.platform === "win32" && pid) {
-      this.killProcessTreeByPid(pid);
+      await this.killProcessTreeByPid(pid);
 
       // 若是打包可执行模式，再按绝对路径清理一次同名残留，避免 PID 失联的孤儿进程残存。
       if (this.launchedRuntimeExePath) {
@@ -699,15 +711,20 @@ export class DanmakuService extends EventEmitter {
   }
 
   /** Windows: 按 PID 强制结束整个进程树（含子进程） */
-  private killProcessTreeByPid(pid: number): void {
-    try {
-      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-    } catch {
-      // 忽略不存在/权限等错误，避免影响主流程
-    }
+  private killProcessTreeByPid(pid: number): Promise<void> {
+    return new Promise((resolve) => {
+      try {
+        const child = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+          windowsHide: true,
+          stdio: "ignore",
+        });
+        child.once("error", () => resolve());
+        child.once("close", () => resolve());
+      } catch {
+        // 忽略不存在/权限等错误，避免影响主流程
+        resolve();
+      }
+    });
   }
 
   updateKeywords(keywords: KeywordRule[]): void {

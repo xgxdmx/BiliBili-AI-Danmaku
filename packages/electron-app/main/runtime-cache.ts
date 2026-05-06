@@ -7,7 +7,9 @@
 //   3. 控制清理超时，避免退出流程被缓存清理阻塞
 // ============================================================
 
-import { type BrowserWindow, session as electronSession } from "electron";
+import { app, type BrowserWindow, session as electronSession } from "electron";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 
 /**
  * Electron 41 文档允许清理的可再生缓存类存储。
@@ -22,6 +24,27 @@ async function withTimeout(task: Promise<unknown>, timeoutMs: number): Promise<v
     task.then(() => undefined).catch(() => undefined),
     new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
+}
+
+async function pruneUserDataRuntimeCaches(): Promise<void> {
+  const userDataPath = app.getPath("userData");
+  const removableDirs = [
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+    "blob_storage",
+    "Shared Dictionary",
+  ];
+
+  for (const dirName of removableDirs) {
+    const target = join(userDataPath, dirName);
+    await withTimeout(
+      rm(target, { recursive: true, force: true }).catch(() => undefined),
+      1200,
+    );
+  }
 }
 
 /**
@@ -55,4 +78,7 @@ export async function clearElectronRuntimeCachesOnExit(options: {
     const storages: ClearableRuntimeStorage[] = [...CLEARABLE_RUNTIME_STORAGES];
     await withTimeout(ses.clearStorageData({ storages }), 1500);
   }
+
+  // 额外清理 userData 下可再生缓存目录（不触碰配置与业务数据）。
+  await pruneUserDataRuntimeCaches();
 }
