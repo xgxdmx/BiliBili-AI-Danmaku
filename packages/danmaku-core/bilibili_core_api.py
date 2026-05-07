@@ -101,10 +101,8 @@ async def fetch_anchor_profile(
     anchor_face_data = ""
     if anchor_face:
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0",
-                "Referer": "https://www.bilibili.com/",
-            }
+            from ua import DOWNLOAD_HEADERS
+            headers = DOWNLOAD_HEADERS.copy()
             async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(anchor_face, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:

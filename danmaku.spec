@@ -3,6 +3,7 @@
 from PyInstaller.utils.hooks import collect_submodules
 
 hidden_imports = [
+    'ua',
     'receiver',
     'sender',
     'bilibili_core_api',

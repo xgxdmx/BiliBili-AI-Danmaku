@@ -617,6 +617,11 @@ function createWindow(): void {
     },
   });
 
+  // 模拟 Chrome UA，避免 B 站扫码登录页检测到 Electron 环境触发风控
+  mainWindow.webContents.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+  );
+
   if (process.env.ELECTRON_RENDERER_URL) {
     logger.log("Loading URL:", process.env.ELECTRON_RENDERER_URL);
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);

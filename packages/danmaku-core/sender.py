@@ -91,11 +91,8 @@ class BilibiliSender:
             "msg_type": 1,
         }
         cookies = {"SESSDATA": sessdata, "bili_jct": bili_jct}
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": f"https://live.bilibili.com/{room_id}",
-        }
+        from ua import SEND_API_HEADERS
+        headers = {**SEND_API_HEADERS, "Referer": f"https://live.bilibili.com/{room_id}"}
 
         async with session.post(self.SEND_API, data=payload, cookies=cookies, headers=headers) as resp:
             text = await resp.text()
