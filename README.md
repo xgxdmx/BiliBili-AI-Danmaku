@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" />
-  <img src="https://img.shields.io/badge/License-Apache%202.0-yellow?style=flat-square" alt="License" />
+  <img src="https://img.shields.io/badge/License-GPLv3-blue?style=flat-square" alt="License" />
 </p>
 
 <p align="center">
@@ -376,11 +376,11 @@ pnpm package:clean
 
 ## 📄 许可证
 
-本项目基于 Apache License 2.0 开源许可。
+本项目基于 GNU General Public License v3.0（GPLv3）开源许可。
 
 - ✅ 可免费使用于商业和非商业目的
 - ✅ 可自由修改和分发
-- ✅ 需保留原始许可证声明
-- ❌ 不得使用项目名称进行背书
+- ✅ 分发修改版/衍生版时需按 GPLv3 开源并附带许可证声明
+- ✅ 分发时需提供对应源代码（按 GPLv3 要求）
 
 详细条款请参阅 [LICENSE](./LICENSE) 文件。

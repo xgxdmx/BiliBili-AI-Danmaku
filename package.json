@@ -4,7 +4,7 @@
   "private": true,
   "description": "Bilibili live danmaku listener with AI integration",
   "packageManager": "pnpm@10.33.2",
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": ""

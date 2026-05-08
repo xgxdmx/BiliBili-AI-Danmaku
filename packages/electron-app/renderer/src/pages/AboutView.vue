@@ -7,7 +7,7 @@ const APP_INFO = {
   version: __APP_VERSION__ || "0.3.1",
   author: "星光下的梦想",
   description: "B站直播间弹幕监听 + AI 自动回复",
-  license: "Apache-2.0",
+  license: "GPL-3.0-only",
   buildDate: __APP_BUILD_DATE__,
 };
 
