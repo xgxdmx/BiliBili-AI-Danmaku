@@ -388,6 +388,19 @@ export class DanmakuService extends EventEmitter {
   /** 生命周期串行队列：确保 start/stop 不会并发互相覆盖进程引用 */
   private lifecycleQueue: Promise<void> = Promise.resolve();
 
+  private sanitizeLogLine(input: string): string {
+    return input
+      .replace(/(SESSDATA|sessdata)\s*[=:]\s*[^\s,;]+/g, "$1=<redacted>")
+      .replace(/(bili_jct|bili-jct|biliJct)\s*[=:]\s*[^\s,;]+/g, "$1=<redacted>")
+      .replace(/(buvid3)\s*[=:]\s*[^\s,;]+/g, "$1=<redacted>")
+      .replace(/(api[_-]?key|token)\s*[=:]\s*[^\s,;]+/gi, "$1=<redacted>");
+  }
+
+  private truncateLogLine(input: string, maxLen = 360): string {
+    if (input.length <= maxLen) return input;
+    return `${input.slice(0, maxLen)}...(truncated)`;
+  }
+
   /** 将生命周期操作串行化，避免重复 spawn 导致孤儿进程 */
   private enqueueLifecycle<T>(op: () => Promise<T>): Promise<T> {
     const run = this.lifecycleQueue.then(op, op);
@@ -576,20 +589,37 @@ export class DanmakuService extends EventEmitter {
   /** 绑定子进程的 stdout/stderr/close/error 事件 */
   private bindProcessEvents(proc: ChildProcess): void {
     let stderrData = "";
+    let suppressedStderrLines = 0;
+    let lastStderrWarnAt = 0;
     proc.stdout?.on("data", (data: Buffer) => { this.handleStdout(data.toString("utf-8")); });
     proc.stderr?.on("data", (data: Buffer) => {
       try {
         const text = data.toString("utf-8");
         if (text.includes("unknown cmd=")) return;
         if (text.trim()) {
-          stderrData += text;
-          for (const line of text.trim().split("\n")) {
-            if (line.trim()) logger.log("[Python]", line.trim());
+          for (const rawLine of text.trim().split("\n")) {
+            const line = this.truncateLogLine(this.sanitizeLogLine(rawLine.trim()));
+            if (!line) continue;
+            stderrData += `${line}\n`;
+            const now = Date.now();
+            if (now - lastStderrWarnAt >= 3000) {
+              if (suppressedStderrLines > 0) {
+                logger.warn("[Python stderr] lines suppressed:", suppressedStderrLines);
+                suppressedStderrLines = 0;
+              }
+              logger.warn("[Python stderr]", line);
+              lastStderrWarnAt = now;
+            } else {
+              suppressedStderrLines += 1;
+            }
           }
         }
       } catch {}
     });
     proc.on("close", (code) => {
+      if (suppressedStderrLines > 0) {
+        logger.warn("[Python stderr] lines suppressed before close:", suppressedStderrLines);
+      }
       logger.log("Python process closed, code:", code);
       this._connected = false;
       const reason = stderrData.trim()

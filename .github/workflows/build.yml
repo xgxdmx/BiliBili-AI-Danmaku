@@ -2,7 +2,9 @@ name: Build Desktop
 
 on:
   push:
-    branches: [alpha, main]
+    branches: [main]
+    tags:
+      - 'v*'
 
 concurrency:
   group: build-${{ github.ref }}
@@ -75,18 +77,16 @@ jobs:
           retention-days: 30
 
       - name: Publish to GitHub Release
-        if: github.ref_name == 'main'
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          version=$(node -p "require('./package.json').version")
-          short_sha="${{ github.sha }}"
-          short_sha="${short_sha:0:7}"
+          tag="${{ github.ref_name }}"
           exe=$(ls dist/*.exe | head -1)
 
-          gh release create "V$version" "$exe" \
-            --title "BiliBili-AI-Danmaku V$version" \
+          gh release create "$tag" "$exe" \
+            --title "BiliBili-AI-Danmaku $tag" \
             --target "${{ github.sha }}" \
             --notes ""
 

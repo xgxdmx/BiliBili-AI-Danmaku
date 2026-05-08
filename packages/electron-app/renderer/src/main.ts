@@ -21,7 +21,8 @@ const router = createRouter({
     { path: "/room", component: RoomView },
     { path: "/keywords", component: KeywordsView },
     { path: "/models", component: ModelSettingsView },
-    { path: "/dev", component: DevView },
+    { path: "/config", component: DevView },
+    { path: "/dev", redirect: "/config" },
     { path: "/about", component: AboutView },
   ],
 });

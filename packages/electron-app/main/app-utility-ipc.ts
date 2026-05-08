@@ -74,7 +74,7 @@ async function checkLatestRelease(): Promise<CheckUpdateResult> {
     }
 
     const data = (await resp.json()) as { tag_name?: string; html_url?: string; body?: string };
-    const latestVersion = String(data.tag_name || "").replace(/^v/, "");
+    const latestVersion = String(data.tag_name || "").replace(/^[vV]/, "");
     if (!latestVersion) {
       return { status: "error", message: "无法解析最新版本号" };
     }

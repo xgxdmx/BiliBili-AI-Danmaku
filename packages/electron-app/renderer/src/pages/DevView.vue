@@ -28,6 +28,10 @@ interface ConfigDisplay {
   };
 }
 
+type ConfigPayload = Partial<ConfigDisplay> & {
+  aiModel?: Partial<ConfigDisplay["aiModel"]>;
+};
+
 const config = reactive<ConfigDisplay>({
   room: { roomId: 0, enabled: true, minMedalLevel: 0 },
   credentials: { sessdata: "", biliJct: "", buvid3: "" },
@@ -46,12 +50,17 @@ const config = reactive<ConfigDisplay>({
 const loading = ref(false);
 const message = ref("");
 const messageType = ref<"success" | "error" | "">("");
-const showCredentials = ref(false);
 const exportIncludeSensitive = ref(false);
+
+function maskSecret(value: string): string {
+  if (!value) return "未设置";
+  if (value.length <= 8) return "••••••••";
+  return `${value.slice(0, 2)}••••${value.slice(-2)}`;
+}
 
 onMounted(async () => {
   try {
-    const data = await window.danmakuAPI?.getConfig() as any;
+    const data = await window.danmakuAPI?.getConfig() as ConfigPayload | undefined;
     if (data) {
       config.room = data.room || config.room;
       config.credentials = data.credentials || config.credentials;
@@ -69,7 +78,9 @@ onMounted(async () => {
       }
     }
   } catch (e) {
-    }
+    message.value = `读取配置失败: ${String(e)}`;
+    messageType.value = "error";
+  }
 });
 
 async function handleExport() {
@@ -196,15 +207,12 @@ async function handleImport() {
         <h4 class="section-title">凭证 (已脱敏)</h4>
         <div class="config-item">
           <span class="config-label">SESSDATA:</span>
-          <span class="config-value">{{ showCredentials ? config.credentials.sessdata : '••••••••' }}</span>
+          <span class="config-value">{{ maskSecret(config.credentials.sessdata) }}</span>
         </div>
         <div class="config-item">
           <span class="config-label">bili_jct:</span>
-          <span class="config-value">{{ showCredentials ? config.credentials.biliJct : '••••••••' }}</span>
+          <span class="config-value">{{ maskSecret(config.credentials.biliJct) }}</span>
         </div>
-        <button class="btn btn-small" @click="showCredentials = !showCredentials">
-          {{ showCredentials ? '隐藏' : '显示' }}
-        </button>
       </div>
 
       <div class="config-section">

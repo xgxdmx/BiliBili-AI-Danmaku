@@ -11,8 +11,6 @@
 import { app, BrowserWindow, ipcMain, Menu, Tray, powerMonitor } from "electron";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync } from "fs";
-import { spawn, spawnSync, type ChildProcess } from "child_process";
 import {
   DanmakuService,
   cleanupBundledRunExeResidualsSync,
@@ -37,6 +35,15 @@ import {
   resolveMatchScope,
   type KeywordScope,
 } from "./danmaku-routing";
+import {
+  resolvePreloadScriptPath,
+} from "./main-paths";
+import { createQuitBarrierController } from "./quit-barrier";
+import {
+  cleanupAnchorProfileChildren,
+  fetchAnchorProfileByPython,
+  type AnchorProfilePayload,
+} from "./anchor-profile";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,19 +55,6 @@ const __dirname = dirname(__filename);
 // 如需关闭，直接把 true 改成 false 即可。
 // ============================================================
 const ENABLE_DEVTOOLS_SHORTCUT = false;
-
-interface AnchorProfilePayload {
-  room_id_input: number;
-  room_id_real: number;
-  anchor_uid: number;
-  anchor_name: string;
-  anchor_face: string;
-  anchor_face_data: string;
-  live_status: number;
-  room_title: string;
-  popularity: number;
-  followers: number;
-}
 
 interface DashboardRoomProfilePayload {
   name: string;
@@ -102,131 +96,6 @@ function normalizeDashboardAvatarUrl(value: string): string {
   return raw;
 }
 
-
-function resolveDanmakuCoreDir(): string {
-  const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
-  if (isDevMode) {
-    return join(__dirname, "..", "..", "..", "..", "packages", "danmaku-core");
-  }
-  const resourcesPath = process.resourcesPath || app.getAppPath();
-  return join(resourcesPath, "danmaku-core");
-}
-
-function resolvePythonPath(): string {
-  const isWin = process.platform === "win32";
-  const venvPython = isWin
-    ? join(__dirname, "..", "..", "..", "..", ".venv", "Scripts", "python.exe")
-    : join(__dirname, "..", "..", "..", "..", ".venv", "bin", "python");
-  if (existsSync(venvPython)) return venvPython;
-  return isWin ? "python" : "python3";
-}
-
-function resolveDanmakuRuntimePath(): string | null {
-  const base = resolveDanmakuCoreDir();
-  const isWin = process.platform === "win32";
-  const candidates = isWin
-    ? [
-        join(base, "danmaku.exe"),
-        join(base, "danmaku", "danmaku.exe"),
-        join(base, "run.exe"),
-        join(base, "run", "run.exe"),
-      ]
-    : [
-        join(base, "danmaku"),
-        join(base, "danmaku", "danmaku"),
-        join(base, "run"),
-        join(base, "run", "run"),
-      ];
-  return candidates.find((p) => existsSync(p)) || null;
-}
-
-function resolveAnchorScriptPath(): string {
-  const base = resolveDanmakuCoreDir();
-  const candidates = [
-    join(base, "bilibili_core_api.py"),
-  ];
-  return candidates.find((p) => existsSync(p)) || candidates[0];
-}
-
-async function fetchAnchorProfileByPython(roomId: number): Promise<AnchorProfilePayload> {
-  const isDevMode = Boolean(process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_RUN_AS_NODE);
-  const scriptPath = resolveAnchorScriptPath();
-  const pythonPath = resolvePythonPath();
-  const runtimePath = resolveDanmakuRuntimePath();
-  const credentials = getConfig().credentials;
-
-  const command = !isDevMode && runtimePath ? runtimePath : pythonPath;
-  const args = !isDevMode && runtimePath
-    ? ["anchor", String(roomId)]
-    : ["-X", "utf8", scriptPath, String(roomId)];
-  if (credentials?.sessdata) args.push("--sessdata", credentials.sessdata);
-  if (credentials?.biliJct) args.push("--bili-jct", credentials.biliJct);
-  if (credentials?.buvid3) args.push("--buvid3", credentials.buvid3);
-
-  return await new Promise<AnchorProfilePayload>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: "1",
-        PYTHONUTF8: "1",
-        PYTHONIOENCODING: "utf-8",
-      },
-    });
-    anchorProfileChildren.add(child);
-
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      forceKillChildProcessTree(child);
-      anchorProfileChildren.delete(child);
-      reject(new Error("主播信息查询超时"));
-    }, 15000);
-
-    child.stdout?.on("data", (buf: Buffer) => {
-      stdout += buf.toString("utf-8");
-    });
-    child.stderr?.on("data", (buf: Buffer) => {
-      stderr += buf.toString("utf-8");
-    });
-
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      anchorProfileChildren.delete(child);
-      reject(err);
-    });
-
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      anchorProfileChildren.delete(child);
-      if (code !== 0) {
-        reject(new Error(`主播信息脚本退出异常(code=${code}): ${stderr.trim() || "unknown error"}`));
-        return;
-      }
-      const text = stdout.trim();
-      if (!text) {
-        reject(new Error("主播信息脚本无输出"));
-        return;
-      }
-      try {
-        const parsed = JSON.parse(text) as AnchorProfilePayload;
-        resolve(parsed);
-      } catch (e) {
-        reject(new Error(`主播信息解析失败: ${String(e)} | output=${text}`));
-      }
-    });
-  });
-}
-
-function resolvePreloadScriptPath(): string {
-  const candidates = [
-    join(__dirname, "../preload/index.mjs"),
-    join(__dirname, "../preload/index.js"),
-  ];
-  return candidates.find((p) => existsSync(p)) || candidates[0];
-}
-
 /** B站登录子窗口引用（同一时刻只允许一个） */
 let biliLoginWindow: BrowserWindow | null = null;
 
@@ -247,9 +116,6 @@ let appTray: Tray | null = null;
 let isAppQuitting = false;
 /** 当前关闭确认请求 ID */
 let pendingCloseDecisionRequestId: string | null = null;
-/** 主播资料查询临时子进程集合（退出时兜底清理） */
-const anchorProfileChildren = new Set<ChildProcess>();
-
 /** AI 连接状态缓存（窗口未创建时 IPC 仍可返回） */
 let latestAIStatus: AIRelayStatus = {
   connected: false,
@@ -387,7 +253,7 @@ async function buildDashboardRoomProfile(): Promise<DashboardRoomProfilePayload>
   }
 
   try {
-    const data = await fetchAnchorProfileByPython(currentRoomId);
+    const data = await fetchAnchorProfileByPython(currentRoomId, __dirname, getConfig().credentials);
     const avatarDataUrl = String(data.anchor_face_data || "");
     const avatarUrl = normalizeDashboardAvatarUrl(String(data.anchor_face || ""));
 
@@ -424,10 +290,6 @@ const dashboardMetricsStore = createDashboardMetricsStore();
 
 /** 防止重复清理（cleanupBeforeExit 可能被多个退出信号同时触发） */
 let isCleanupRunning = false;
-/** 是否允许本次 quit 直接放行（清理完成后置 true） */
-let allowNativeQuit = false;
-/** 退出栅栏 Promise（确保只执行一次） */
-let quitBarrierPromise: Promise<void> | null = null;
 
 const appContext: MainAppContext = {
   getMainWindow: () => mainWindow,
@@ -508,7 +370,7 @@ async function cleanupBeforeExit(): Promise<void> {
         // 退出以响应速度优先：若优雅停止超时，后续由兜底清理继续收敛残留。
         await withTimeout(danmakuService.stop(), 1200, "danmakuService.stop");
       } catch (e) {
-        console.error("Error stopping danmaku service:", e);
+        logger.error("Error stopping danmaku service:", e);
       } finally {
         // 退出阶段释放服务引用，阻断晚到的 start IPC 复用已停止实例
         danmakuService = null;
@@ -537,62 +399,28 @@ async function cleanupBeforeExit(): Promise<void> {
     }
 
     // 兜底：清理主播资料查询临时子进程，避免退出后残留
-    for (const child of anchorProfileChildren) {
-      forceKillChildProcessTree(child);
-    }
-    anchorProfileChildren.clear();
+    cleanupAnchorProfileChildren();
   } finally {
     isCleanupRunning = false;
   }
 }
 
-/** 强制结束子进程（Windows 下结束整棵进程树） */
-function forceKillChildProcessTree(child: ChildProcess): void {
-  const pid = child.pid;
-  if (!pid) return;
-
-  if (process.platform === "win32") {
-    try {
-      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-      return;
-    } catch {
-      // 回退到普通 kill
-    }
-  }
-
-  try {
-    child.kill("SIGKILL");
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * 单一退出栅栏：只执行一次清理，清理完成后再放行 Electron 退出。
- */
-function runQuitBarrier(): Promise<void> {
-  if (quitBarrierPromise) return quitBarrierPromise;
-  isAppQuitting = true;
-
-  mainWindow?.webContents.send("app:quitting", {
-    message: "正在退出程序，请稍候…",
-  });
-
-  quitBarrierPromise = (async () => {
-    await cleanupBeforeExit();
-    allowNativeQuit = true;
-    app.quit();
-  })().catch((e) => {
-    console.error("[Main] quit barrier failed:", e);
-    allowNativeQuit = true;
-    app.exit(1);
-  });
-
-  return quitBarrierPromise;
-}
+const quitBarrier = createQuitBarrierController({
+  setAppQuitting: (value) => {
+    isAppQuitting = value;
+  },
+  notifyRendererQuitting: () => {
+    mainWindow?.webContents.send("app:quitting", {
+      message: "正在退出程序，请稍候…",
+    });
+  },
+  cleanupBeforeExit,
+  quitApp: () => app.quit(),
+  hardExit: (code) => app.exit(code),
+  onError: (error) => {
+    logger.error("[Main] quit barrier failed:", error);
+  },
+});
 
 /** 创建主 BrowserWindow，配置预加载脚本和安全策略 */
 function createWindow(): void {
@@ -610,8 +438,8 @@ function createWindow(): void {
     show: false,
     backgroundColor: "#1a1b26",
     webPreferences: {
-      preload: resolvePreloadScriptPath(),
-      sandbox: false,
+      preload: resolvePreloadScriptPath(__dirname),
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -632,11 +460,11 @@ function createWindow(): void {
   }
 
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
-    console.error("[Main] Failed to load:", errorCode, errorDescription);
+    logger.error("[Main] Failed to load:", errorCode, errorDescription);
   });
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error("[Main] Renderer process gone:", details.reason);
+    logger.error("[Main] Renderer process gone:", details.reason);
   });
 
   // 按开关控制开发者工具快捷键（F12 / Ctrl+Shift+I / Cmd+Opt+I）
@@ -984,7 +812,7 @@ function registerIpcHandlers(): void {
       return { status: "error", message: "roomId 无效" };
     }
     try {
-      const data = await fetchAnchorProfileByPython(normalizedRoomId);
+      const data = await fetchAnchorProfileByPython(normalizedRoomId, __dirname, getConfig().credentials);
       return { status: "ok", data };
     } catch (e) {
       return { status: "error", message: e instanceof Error ? e.message : String(e) };
@@ -1126,24 +954,24 @@ if (!gotTheLock) {
 
   /** 所有窗口关闭 → 清理 → 延迟退出（macOS 需要显式 quit） */
   app.on("window-all-closed", () => {
-    if (allowNativeQuit) return;
-    void runQuitBarrier();
+    if (quitBarrier.shouldAllowNativeQuit()) return;
+    void quitBarrier.runQuitBarrier();
   });
 
   /** 退出前清理（防止资源泄露） */
   app.on("before-quit", (event) => {
-    if (allowNativeQuit) return;
+    if (quitBarrier.shouldAllowNativeQuit()) return;
     event.preventDefault();
-    void runQuitBarrier();
+    void quitBarrier.runQuitBarrier();
   });
 
   /** 进程信号处理（Ctrl+C / kill） */
   process.on("SIGINT", () => {
-    void runQuitBarrier().finally(() => process.exit(0));
+    void quitBarrier.runQuitBarrier().finally(() => process.exit(0));
   });
 
   process.on("SIGTERM", () => {
-    void runQuitBarrier().finally(() => process.exit(0));
+    void quitBarrier.runQuitBarrier().finally(() => process.exit(0));
   });
 
   // Node 进程退出前的最后兜底（同步）
@@ -1153,8 +981,8 @@ if (!gotTheLock) {
 
   /** 未捕获异常 → 记录日志 → 清理 → 非零退出 */
   process.on("uncaughtException", (err) => {
-    console.error("[Main] uncaughtException:", err);
-    void runQuitBarrier().finally(() => process.exit(1));
+    logger.error("[Main] uncaughtException:", err);
+    void quitBarrier.runQuitBarrier().finally(() => process.exit(1));
   });
 
   /** macOS dock 点击事件：无窗口时重新创建 */

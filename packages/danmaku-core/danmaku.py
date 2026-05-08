@@ -53,17 +53,29 @@ if __name__ == "__main__":
 
         parser = argparse.ArgumentParser()
         parser.add_argument("room_id", type=int)
-        parser.add_argument("--sessdata", default=None)
-        parser.add_argument("--bili-jct", dest="bili_jct", default=None)
-        parser.add_argument("--buvid3", default=None)
         # 仅解析 mode 之后的参数，避免把 "anchor" 自身当作 room_id
         args = parser.parse_args(sys.argv[2:])
 
+        sessdata = None
+        bili_jct = None
+        buvid3 = None
+        try:
+            payload = (sys.stdin.read() or "").strip()
+            if payload:
+                parsed = json.loads(payload)
+                if isinstance(parsed, dict):
+                    sessdata = parsed.get("sessdata")
+                    bili_jct = parsed.get("biliJct")
+                    buvid3 = parsed.get("buvid3")
+        except Exception:
+            # 兼容无 stdin / 非 JSON 场景
+            pass
+
         profile = asyncio.run(fetch_anchor_profile(
             args.room_id,
-            sessdata=args.sessdata,
-            bili_jct=args.bili_jct,
-            buvid3=args.buvid3,
+            sessdata=sessdata,
+            bili_jct=bili_jct,
+            buvid3=buvid3,
         ))
         print(json.dumps(asdict(profile), ensure_ascii=False))
     elif mode == "warmup" or mode == "__opencode_warmup__":
