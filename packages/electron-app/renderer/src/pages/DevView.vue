@@ -128,7 +128,8 @@ async function handleImport() {
         return;
       }
 
-      message.value = "导入成功（支持 plain-v1 / encrypted-v1）";
+      const detectedFormat = String((result as { detectedFormat?: string })?.detectedFormat || "unknown");
+      message.value = `导入成功，此配置文件为 ${detectedFormat} 格式`;
       messageType.value = "success";
       // 重新加载配置显示
       const data = await window.danmakuAPI?.getConfig() as ConfigDisplay;

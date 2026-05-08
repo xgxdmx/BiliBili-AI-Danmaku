@@ -72,14 +72,19 @@ const updateMessage = ref("");
 const latestVersion = ref("");
 const releaseUrl = ref("");
 
-async function checkUpdate() {
+async function checkUpdate(silent = false) {
   updateStatus.value = "checking";
   updateMessage.value = "";
   try {
     const result = await window.danmakuAPI?.checkUpdate();
     if (!result || result.status !== "ok") {
-      updateStatus.value = "error";
-      updateMessage.value = result?.message || "检查更新失败";
+      if (silent) {
+        updateStatus.value = "idle";
+        updateMessage.value = "";
+      } else {
+        updateStatus.value = "error";
+        updateMessage.value = result?.message || "检查更新失败";
+      }
       return;
     }
     latestVersion.value = result.latestVersion || "";
@@ -92,8 +97,13 @@ async function checkUpdate() {
       updateMessage.value = "已是最新版本";
     }
   } catch {
-    updateStatus.value = "error";
-    updateMessage.value = "网络连接失败";
+    if (silent) {
+      updateStatus.value = "idle";
+      updateMessage.value = "";
+    } else {
+      updateStatus.value = "error";
+      updateMessage.value = "网络连接失败";
+    }
   }
 }
 
@@ -119,8 +129,8 @@ onMounted(async () => {
       closeWindowBehavior.value = config.closeWindowBehavior;
     }
   } catch { /* 忽略 */ }
-  // 启动时自动检查更新
-  checkUpdate();
+  // 启动时静默检查更新：失败不打红色失败徽标，避免弱网下误导用户
+  checkUpdate(true);
 });
 
 async function setTheme(mode: ThemeMode) {
@@ -171,6 +181,11 @@ async function setTheme(mode: ThemeMode) {
             class="update-badge error"
             :title="updateMessage"
           >检查失败</span>
+          <button
+            v-else-if="updateStatus === 'idle'"
+            class="update-badge checking"
+            @click="checkUpdate(false)"
+          >检查更新</button>
         </div>
       </div>
       <div class="info-row">

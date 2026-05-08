@@ -125,6 +125,14 @@
   IfFileExists "$APPDATA\\${ROAMING_DIR_NEW}\\config-export.json" 0 +2
     Rename "$APPDATA\\${ROAMING_DIR_NEW}\\config-export.json" "$PLUGINSDIR\\n_export.json"
 
+  ; 目录 4：${ROAMING_DIR_PRODUCT}（当前产品名目录）
+  IfFileExists "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config.json" 0 +2
+    Rename "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config.json" "$PLUGINSDIR\\p_config.json"
+  IfFileExists "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config.json.legacy.bak" 0 +2
+    Rename "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config.json.legacy.bak" "$PLUGINSDIR\\p_legacy.bak"
+  IfFileExists "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config-export.json" 0 +2
+    Rename "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config-export.json" "$PLUGINSDIR\\p_export.json"
+
   ; ----- 清理：删除 Roaming 目录（Electron 缓存全部清除）-----
   RMDir /r "$APPDATA\\${APP_PACKAGE_NAME}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_OLD}"
@@ -164,6 +172,15 @@
     Rename "$PLUGINSDIR\\n_legacy.bak" "$APPDATA\\${ROAMING_DIR_NEW}\\config.json.legacy.bak"
   IfFileExists "$PLUGINSDIR\\n_export.json" 0 +2
     Rename "$PLUGINSDIR\\n_export.json" "$APPDATA\\${ROAMING_DIR_NEW}\\config-export.json"
+
+  ; 目录 4 恢复
+  IfFileExists "$PLUGINSDIR\\p_config.json" 0 +3
+    CreateDirectory "$APPDATA\\${ROAMING_DIR_PRODUCT}"
+    Rename "$PLUGINSDIR\\p_config.json" "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config.json"
+  IfFileExists "$PLUGINSDIR\\p_legacy.bak" 0 +2
+    Rename "$PLUGINSDIR\\p_legacy.bak" "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config.json.legacy.bak"
+  IfFileExists "$PLUGINSDIR\\p_export.json" 0 +2
+    Rename "$PLUGINSDIR\\p_export.json" "$APPDATA\\${ROAMING_DIR_PRODUCT}\\config-export.json"
 
   ; 恢复 shell 上下文
   ${if} $installMode == "all"

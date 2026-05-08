@@ -600,30 +600,59 @@ export function importConfigFromFile(filePath: string): { status: string; error?
  *   - plain-v2：直接 JSON，按字段验证后写入 store
  *   - encrypted-v1：先 AES-256-GCM 解密，再按 plain 格式处理
  */
-export function importConfigFromContent(content: string): { status: string; error?: string } {
+export function importConfigFromContent(content: string): { status: string; error?: string; detectedFormat?: string } {
   try {
+    const rawText = String(content || "").replace(/^\uFEFF/, "").trim();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Imported config structure is dynamic
-    const parsed: any = JSON.parse(content);
-    const config: ConfigSchema = parsed?.__meta?.format === "encrypted-v1"
-      ? JSON.parse(decryptText(parsed.payload as EncryptedExportPayload))
-      : parsed;
-    
+    const parsed: any = JSON.parse(rawText);
+
+    // 兼容多种历史/外部导入包装：
+    // - encrypted-v1: { __meta.format, payload }
+    // - plain-v2: 直接根对象
+    // - wrapper: { data: {...} } / { config: {...} }
+    // - clipboard fenced text is handled by pre-trim above (仅去 BOM)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- imported shape is dynamic
+    let detectedFormat = "unknown";
+
+    const unwrapConfig = (value: any): any => {
+      if (!value || typeof value !== "object") return value;
+      if (value?.__meta?.format === "encrypted-v1") {
+        detectedFormat = "encrypted-v1";
+        const decrypted = JSON.parse(decryptText(value.payload as EncryptedExportPayload));
+        return unwrapConfig(decrypted);
+      }
+      if (value?.__meta?.format === "plain-v2") {
+        detectedFormat = "plain-v2";
+      }
+      if (value?.data && typeof value.data === "object") return unwrapConfig(value.data);
+      if (value?.config && typeof value.config === "object") return unwrapConfig(value.config);
+      return value;
+    };
+
+    const config = unwrapConfig(parsed) as Partial<ConfigSchema>;
+
     // 验证并保存每个字段
     if (config.room) store.set("room", config.room);
     if (config.credentials) store.set("credentials", config.credentials);
-    if ((config as Partial<ConfigSchema>).quickReplyEnabled !== undefined) {
-      store.set("quickReplyEnabled", (config as Partial<ConfigSchema>).quickReplyEnabled === true);
+    if (config.quickReplyEnabled !== undefined) {
+      store.set("quickReplyEnabled", config.quickReplyEnabled === true);
     }
     if (config.keywords) store.set("keywords", config.keywords);
     store.set("quickRepliesEnabled", config.quickRepliesEnabled ?? schema.quickRepliesEnabled);
     if (config.quickReplies) store.set("quickReplies", config.quickReplies);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- aiModel may not exist on older configs
-    if ((config as any).aiModel) store.set("aiModel", (config as any).aiModel);
-    if ((config as Partial<ConfigSchema>).closeWindowBehavior) {
-      store.set("closeWindowBehavior", (config as Partial<ConfigSchema>).closeWindowBehavior as CloseWindowBehavior);
+    if (config.aiModel) store.set("aiModel", config.aiModel);
+    if (config.closeWindowBehavior) {
+      store.set("closeWindowBehavior", config.closeWindowBehavior as CloseWindowBehavior);
     }
-    
-    return { status: "ok" };
+    if (config.theme) {
+      store.set("theme", config.theme);
+    }
+
+    if (detectedFormat === "unknown") {
+      detectedFormat = parsed?.__meta?.format ? String(parsed.__meta.format) : "legacy-plain";
+    }
+
+    return { status: "ok", detectedFormat };
   } catch (e) {
     return { status: "error", error: String(e) };
   }

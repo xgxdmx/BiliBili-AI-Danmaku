@@ -64,17 +64,41 @@ function isSafeExternalUrl(value: unknown): value is string {
 async function checkLatestRelease(): Promise<CheckUpdateResult> {
   try {
     const currentVersion = app.getVersion();
+    const releaseUrlFallback = "https://github.com/xgxdmx/BiliBili-AI-Danmaku/releases/latest";
+    const requestHeaders = {
+      "User-Agent": "BiliBili-AI-Danmaku-UpdateCheck",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+
+    let latestVersion = "";
+    let releaseUrl = releaseUrlFallback;
+    let releaseNotes = "";
+
+    // 主通道：GitHub latest release API
     const resp = await fetch("https://api.github.com/repos/xgxdmx/BiliBili-AI-Danmaku/releases/latest", {
-      headers: { "User-Agent": "BiliBili-AI-Danmaku-UpdateCheck" },
-      signal: AbortSignal.timeout(8000),
+      headers: requestHeaders,
+      signal: AbortSignal.timeout(12000),
     });
 
-    if (!resp.ok) {
-      return { status: "error", message: `GitHub 返回 ${resp.status}` };
+    if (resp.ok) {
+      const data = (await resp.json()) as { tag_name?: string; html_url?: string; body?: string };
+      latestVersion = String(data.tag_name || "").replace(/^[vV]/, "");
+      releaseUrl = data.html_url || releaseUrlFallback;
+      releaseNotes = data.body || "";
+    } else {
+      // 兜底：使用 tags API 获取最近标签，降低 latest release API 偶发失败影响
+      const tagResp = await fetch("https://api.github.com/repos/xgxdmx/BiliBili-AI-Danmaku/tags?per_page=1", {
+        headers: requestHeaders,
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!tagResp.ok) {
+        return { status: "error", message: `GitHub 返回 ${resp.status}/${tagResp.status}` };
+      }
+      const tags = (await tagResp.json()) as Array<{ name?: string }>;
+      latestVersion = String(tags[0]?.name || "").replace(/^[vV]/, "");
     }
 
-    const data = (await resp.json()) as { tag_name?: string; html_url?: string; body?: string };
-    const latestVersion = String(data.tag_name || "").replace(/^[vV]/, "");
     if (!latestVersion) {
       return { status: "error", message: "无法解析最新版本号" };
     }
@@ -84,8 +108,8 @@ async function checkLatestRelease(): Promise<CheckUpdateResult> {
       currentVersion,
       latestVersion,
       hasUpdate: hasNewerVersion(currentVersion, latestVersion),
-      releaseUrl: data.html_url || "https://github.com/xgxdmx/BiliBili-AI-Danmaku/releases/latest",
-      releaseNotes: data.body || "",
+      releaseUrl,
+      releaseNotes,
     };
   } catch (error: unknown) {
     return {
