@@ -759,9 +759,18 @@ function registerIpcHandlers(): void {
       });
     }
 
-    // 用户主动启动监听时，禁止后台 warmup 与启动过程并发，避免额外抖动。
-    danmakuRuntimeWarmed = true;
-    clearWarmupTimers();
+    // 资源预载改为“连接直播间时触发”：首连前执行一次 warmup，
+    // 避免首启阶段占用资源导致卡顿。
+    if (!danmakuRuntimeWarmed) {
+      danmakuRuntimeWarmed = true;
+      clearWarmupTimers();
+      const warmupResult = await warmupBundledDanmakuRuntime();
+      logger.log("[Warmup] runtime warmup on connect", {
+        reason: warmupResult.reason,
+        started: warmupResult.started,
+      });
+      setConfigPath("runtimeWarmupCompleted", true);
+    }
 
     await danmakuService.start(config);
     return { status: "ok" };
@@ -871,10 +880,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("app:prepareRoomEntry", async () => {
-    // 非阻塞：仅准备预取数据，warmup 始终走后台调度，禁止在此处等待子进程冷启动。
-    if (!danmakuRuntimeWarmed) {
-      scheduleBackgroundWarmup();
-    }
+    // 仅准备预取数据，不在进房时触发预载。
 
     const config = getConfig();
     const status = danmakuService ? danmakuService.getStatus() : { connected: false, roomId: null };
@@ -882,12 +888,12 @@ function registerIpcHandlers(): void {
     roomEntryPrefetchCache = {
       config,
       status,
-      warmed: true,
-      warmupReason: danmakuRuntimeWarmed ? "already-warmed" : "background-scheduled",
+      warmed: danmakuRuntimeWarmed,
+      warmupReason: danmakuRuntimeWarmed ? "already-warmed" : "deferred-to-connect",
       timestamp: Date.now(),
     };
 
-    return { status: "ok", warmup: { started: danmakuRuntimeWarmed, reason: "background" }, prefetched: true };
+    return { status: "ok", warmup: { started: danmakuRuntimeWarmed, reason: "deferred-to-connect" }, prefetched: true };
   });
 
   ipcMain.handle("app:consumeRoomEntryPrefetch", async () => {
@@ -906,8 +912,7 @@ function registerIpcHandlers(): void {
         mainWindow.focus();
       }
 
-      // 渲染层可交互后采用“延迟 + 空闲 + 强制兜底”三段式后台预热。
-      scheduleBackgroundWarmup();
+      // 预载已改为连接直播间时触发，此处不再后台预热。
     });
   }
 }

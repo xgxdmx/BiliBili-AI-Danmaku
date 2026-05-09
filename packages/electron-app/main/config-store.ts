@@ -122,6 +122,8 @@ export interface ConfigSchema {
   theme: "light" | "dark" | "system";
   /** 点击主窗口关闭按钮（X）时的行为 */
   closeWindowBehavior: CloseWindowBehavior;
+  /** 是否已完成过首次连接预载（用于首次连接提示） */
+  runtimeWarmupCompleted: boolean;
 }
 
 // ─── 默认值 & 常量 ──────────────────────────────────────────
@@ -177,6 +179,7 @@ const schema: ConfigSchema = {
   },
   theme: "system",
   closeWindowBehavior: "ask",
+  runtimeWarmupCompleted: false,
 };
 
 // ─── 加密密钥派生 ──────────────────────────────────────────
@@ -389,6 +392,7 @@ export function getConfig(): ConfigSchema {
     aiModel: store.get("aiModel", schema.aiModel),
     theme: store.get("theme", schema.theme),
     closeWindowBehavior: store.get("closeWindowBehavior", schema.closeWindowBehavior),
+    runtimeWarmupCompleted: store.get("runtimeWarmupCompleted", schema.runtimeWarmupCompleted),
   };
 
   // 迁移旧版 aiModel（扁平结构 → per-provider 结构）
@@ -574,6 +578,7 @@ export function exportConfigToFile(
         providers: exportedProviders,
       },
       closeWindowBehavior: config.closeWindowBehavior || "ask",
+      runtimeWarmupCompleted: config.runtimeWarmupCompleted === true,
     };
     const configDir = store.path ? dirname(store.path) : process.cwd();
     const exportPath = targetPath || join(configDir, 'config-export.json');
@@ -643,6 +648,9 @@ export function importConfigFromContent(content: string): { status: string; erro
     if (config.aiModel) store.set("aiModel", config.aiModel);
     if (config.closeWindowBehavior) {
       store.set("closeWindowBehavior", config.closeWindowBehavior as CloseWindowBehavior);
+    }
+    if (config.runtimeWarmupCompleted !== undefined) {
+      store.set("runtimeWarmupCompleted", config.runtimeWarmupCompleted === true);
     }
     if (config.theme) {
       store.set("theme", config.theme);

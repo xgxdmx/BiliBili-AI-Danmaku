@@ -17,6 +17,31 @@ const { promisify } = require("util");
 
 const execFileAsync = promisify(execFile);
 
+function collectRceditCandidates(context) {
+  const candidates = new Set();
+  const roots = [
+    __dirname,
+    path.resolve(__dirname, ".."),
+    path.resolve(__dirname, "..", ".."),
+    path.resolve(__dirname, "..", "..", ".."),
+    path.resolve(__dirname, "..", "..", "..", ".."),
+    context?.appOutDir,
+    process.cwd(),
+  ].filter(Boolean);
+
+  for (const root of roots) {
+    let current = root;
+    for (let i = 0; i < 8; i += 1) {
+      candidates.add(path.join(current, "node_modules", "rcedit", "bin", "rcedit-x64.exe"));
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+
+  return [...candidates];
+}
+
 module.exports = async function (context) {
   // 仅处理 Windows 平台
   if (context.electronPlatformName !== "win32") return;
@@ -35,23 +60,21 @@ module.exports = async function (context) {
   }
 
   // 查找 rcedit 二进制。
-  // 本地构建时 __dirname = packages/electron-app/build，上级即 electron-app。
-  // CI 构建时 electron-builder 从 .deploy/build/ 加载此文件，__dirname = .deploy/build/，
-  // 而 .deploy/node_modules/ 只有 prod 依赖（不含 rcedit），需回退到源码目录查找。
-  const electronAppDir = path.resolve(__dirname, "..");
-  const rootDir = path.resolve(__dirname, "..", "..", "..");
-  const rceditBinPaths = [
-    path.join(electronAppDir, "node_modules", "rcedit", "bin", "rcedit-x64.exe"),
-    path.join(rootDir, "node_modules", "rcedit", "bin", "rcedit-x64.exe"),
-  ];
+  // 兼容两类运行路径：
+  // 1) 本地：packages/electron-app/build/afterPack.cjs
+  // 2) 打包：packages/electron-app/.deploy/build/afterPack.cjs
+  // 并向上递归多个父目录，避免路径层级变化导致漏检。
+  const rceditBinPaths = collectRceditCandidates(context);
   let rceditExe;
   for (const p of rceditBinPaths) {
     if (fs.existsSync(p)) { rceditExe = p; break; }
   }
   if (!rceditExe) {
     console.log("[afterPack] rcedit-x64.exe not found in any path, skipping icon injection");
+    console.log("[afterPack] searched paths:", rceditBinPaths);
     return;
   }
+  console.log("[afterPack] using rcedit:", rceditExe);
 
   // 构建 rcedit 命令行参数
   // 版本号从 electron-app 的 package.json 动态读取，避免每次手动同步

@@ -146,6 +146,8 @@ export interface ConfigSchema {
   theme: "light" | "dark" | "system";
   /** 点击窗口关闭按钮（X）时行为：询问 / 托盘后台 / 直接退出 */
   closeWindowBehavior?: "ask" | "tray" | "exit";
+  /** 是否已完成过首次连接预载（用于首次连接提示） */
+  runtimeWarmupCompleted?: boolean;
 }
 
 export interface DanmakuAPI {
