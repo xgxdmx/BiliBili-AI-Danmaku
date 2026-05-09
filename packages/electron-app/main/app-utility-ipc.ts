@@ -59,6 +59,35 @@ function isSafeExternalUrl(value: unknown): value is string {
 }
 
 /**
+ * 兜底：从 GitHub /releases/latest 的最终跳转 URL 中解析 tag 版本号。
+ * 例如：.../releases/tag/v0.5.3 -> 0.5.3
+ */
+async function fetchVersionFromReleaseRedirect(releaseLatestUrl: string, timeoutMs: number): Promise<{
+  latestVersion: string;
+  releaseUrl: string;
+} | null> {
+  try {
+    const resp = await fetch(releaseLatestUrl, {
+      method: "GET",
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: {
+        "User-Agent": "BiliBili-AI-Danmaku-UpdateCheck",
+      },
+    });
+    const finalUrl = String(resp.url || "");
+    if (!finalUrl) return null;
+    const m = finalUrl.match(/\/releases\/tag\/([^/?#]+)/i);
+    if (!m) return null;
+    const latestVersion = String(m[1] || "").replace(/^[vV]/, "");
+    if (!latestVersion) return null;
+    return { latestVersion, releaseUrl: finalUrl };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 拉取 GitHub latest release 并生成前端可直接消费的更新结果。
  */
 async function checkLatestRelease(): Promise<CheckUpdateResult> {
@@ -92,11 +121,18 @@ async function checkLatestRelease(): Promise<CheckUpdateResult> {
         headers: requestHeaders,
         signal: AbortSignal.timeout(12000),
       });
-      if (!tagResp.ok) {
-        return { status: "error", message: `GitHub 返回 ${resp.status}/${tagResp.status}` };
+      if (tagResp.ok) {
+        const tags = (await tagResp.json()) as Array<{ name?: string }>;
+        latestVersion = String(tags[0]?.name || "").replace(/^[vV]/, "");
+      } else {
+        // 最后兜底：通过 /releases/latest 跳转 URL 解析 tag
+        const redirected = await fetchVersionFromReleaseRedirect(releaseUrlFallback, 12000);
+        if (!redirected) {
+          return { status: "error", message: `GitHub 返回 ${resp.status}/${tagResp.status}` };
+        }
+        latestVersion = redirected.latestVersion;
+        releaseUrl = redirected.releaseUrl;
       }
-      const tags = (await tagResp.json()) as Array<{ name?: string }>;
-      latestVersion = String(tags[0]?.name || "").replace(/^[vV]/, "");
     }
 
     if (!latestVersion) {

@@ -439,7 +439,10 @@ function createWindow(): void {
     backgroundColor: "#1a1b26",
     webPreferences: {
       preload: resolvePreloadScriptPath(__dirname),
-      sandbox: true,
+      // 说明：在当前应用链路下，sandbox:true 在部分打包环境会导致 preload 桥接失效，
+      // 进而出现 "window.danmakuAPI 不可用"（导入失败/登录窗口不弹/关闭确认不弹）。
+      // 这里先保持功能正确性，回退为 false，后续再单独做 sandbox 兼容改造。
+      sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -461,6 +464,17 @@ function createWindow(): void {
 
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
     logger.error("[Main] Failed to load:", errorCode, errorDescription);
+  });
+
+  mainWindow.webContents.on("did-finish-load", () => {
+    void mainWindow?.webContents
+      .executeJavaScript("typeof window.danmakuAPI", true)
+      .then((result) => {
+        logger.log("[Bridge] window.danmakuAPI type:", result);
+      })
+      .catch((e) => {
+        logger.warn("[Bridge] check failed:", e instanceof Error ? e.message : String(e));
+      });
   });
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
@@ -495,7 +509,6 @@ function createWindow(): void {
   });
 
   // 标题栏“最小化”按钮：直接最小化到托盘后台运行（若托盘可用）。
-  // @ts-ignore
   mainWindow.on("minimize", (event) => {
     if (isAppQuitting) return;
     if (!appTray) return; // 托盘初始化失败时保持系统默认最小化行为
@@ -852,6 +865,10 @@ function registerIpcHandlers(): void {
   registerAuthIpcHandlers(appContext);
   registerAiIpcHandlers(appContext);
   registerAppUtilityIpcHandlers();
+
+  ipcMain.on("window:closeConfirmDisplayed", (_event, requestId: string) => {
+    appShell.markCloseConfirmDisplayed(String(requestId || ""));
+  });
 
   ipcMain.handle("app:prepareRoomEntry", async () => {
     // 非阻塞：仅准备预取数据，warmup 始终走后台调度，禁止在此处等待子进程冷启动。

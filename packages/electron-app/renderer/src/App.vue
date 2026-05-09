@@ -136,6 +136,7 @@ onMounted(async () => {
   // 监听主进程发起的关闭确认请求，显示应用内主题化弹窗
   unsubscribeCloseConfirmRequested = window.danmakuAPI?.onCloseConfirmRequested?.((data) => {
     closeDialogRequestId.value = data.requestId;
+    window.danmakuAPI?.notifyCloseConfirmDisplayed?.(data.requestId);
     closeDialogMessage.value = data.message || "关闭窗口时你希望如何处理？";
     closeDialogDetail.value = data.detail || "";
     closeDialogRemember.value = false;

@@ -282,6 +282,11 @@ async function handleDisconnect() {
 }
 
 async function openPopupLogin() {
+  if (!window.danmakuAPI || typeof window.danmakuAPI.openBiliLogin !== "function") {
+    popupLoginStatus.value = "打开登录窗口失败：IPC桥接不可用，请重启应用后重试";
+    popupLoginLoading.value = false;
+    return;
+  }
   popupLoginLoading.value = true;
   popupLoginStatus.value = "正在打开登录窗口...";
   try {

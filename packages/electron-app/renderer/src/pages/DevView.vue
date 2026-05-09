@@ -108,6 +108,11 @@ async function handleExport() {
 }
 
 async function handleImport() {
+  if (!window.danmakuAPI || typeof window.danmakuAPI.importConfigContent !== "function") {
+    message.value = "导入失败：IPC桥接不可用，请重启应用后重试";
+    messageType.value = "error";
+    return;
+  }
   // 使用 dialog 选择文件
   const input = document.createElement('input');
   input.type = 'file';

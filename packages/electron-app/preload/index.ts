@@ -197,6 +197,8 @@ export interface DanmakuAPI {
   onAppQuitting: (callback: (data: { message: string }) => void) => () => void;
   /** 向主进程回传关闭确认结果 */
   respondCloseConfirm: (payload: { requestId: string; action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
+  /** 通知主进程：渲染层确认弹窗已展示（用于关闭原生兜底弹框） */
+  notifyCloseConfirmDisplayed: (requestId: string) => void;
   /** 关闭确认动作直达通道（不依赖 requestId，作为兜底） */
   submitCloseConfirmAction: (payload: { action: "tray" | "exit" | "cancel"; remember: boolean }) => Promise<{ status: string }>;
   /** 检查 GitHub Releases 是否有新版本 */
@@ -344,6 +346,7 @@ const api: DanmakuAPI = {
     return () => ipcRenderer.removeListener("app:quitting", handler);
   },
   respondCloseConfirm: (payload) => ipcRenderer.invoke("window:closeConfirmRespond", payload),
+  notifyCloseConfirmDisplayed: (requestId) => ipcRenderer.send("window:closeConfirmDisplayed", requestId),
   submitCloseConfirmAction: (payload) => ipcRenderer.invoke("window:closeConfirmAction", payload),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),

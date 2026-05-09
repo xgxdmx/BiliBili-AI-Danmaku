@@ -7,7 +7,7 @@
 //   3. 提供窗口图标路径解析与托盘初始化能力
 // ============================================================
 
-import { app, BrowserWindow, Menu, Tray } from "electron";
+import { app, BrowserWindow, dialog, Menu, Tray } from "electron";
 import { existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -51,6 +51,8 @@ export function getAppIconPath(): string {
  * 将 index.ts 里高耦合的窗口外壳逻辑单独收拢，方便后续继续拆 IPC 和生命周期。
  */
 export function createAppShellController(context: MainAppContext) {
+  const displayedCloseConfirmRequestIds = new Set<string>();
+
   const showMainWindow = (): void => {
     const mainWindow = context.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -79,6 +81,7 @@ export function createAppShellController(context: MainAppContext) {
 
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     context.setPendingCloseDecisionRequestId(requestId);
+    displayedCloseConfirmRequestIds.delete(requestId);
 
     mainWindow.webContents.send("window:closeConfirmRequested", {
       requestId,
@@ -87,15 +90,40 @@ export function createAppShellController(context: MainAppContext) {
         "选择“最小化到托盘后台运行”后，弹幕接收、匹配、过滤、固定回复与 AI 回复会继续运行，可通过托盘图标恢复到前台。",
     });
 
+    // 兜底：若渲染层桥接异常导致弹窗事件未被消费，则回退到原生确认框，
+    // 避免“点击 X 无反馈”。
+    setTimeout(() => {
+      if (context.getPendingCloseDecisionRequestId() !== requestId) return;
+      if (displayedCloseConfirmRequestIds.has(requestId)) return;
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: "question",
+        buttons: ["取消", "最小化到托盘", "直接退出"],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true,
+        title: "关闭窗口",
+        message: "关闭窗口时你希望如何处理？",
+        detail: "渲染层确认弹窗未响应，已切换为原生确认框。",
+      });
+      context.setPendingCloseDecisionRequestId(null);
+      if (choice === 1) {
+        hideMainWindowToTray();
+      } else if (choice === 2) {
+        requestAppQuit();
+      }
+    }, 1500).unref?.();
+
     // 兜底：若渲染层未回传（窗口隐藏/时序中断），自动清理 pending，避免后续点击 X 被吞。
     setTimeout(() => {
       if (context.getPendingCloseDecisionRequestId() === requestId) {
         context.setPendingCloseDecisionRequestId(null);
+        displayedCloseConfirmRequestIds.delete(requestId);
       }
     }, 5000).unref?.();
   };
 
   const applyCloseDecision = (action: CloseWindowDialogAction, remember: boolean): void => {
+    displayedCloseConfirmRequestIds.clear();
     if (action === "tray") {
       if (remember) {
         context.setCloseWindowBehavior("tray");
@@ -178,6 +206,29 @@ export function createAppShellController(context: MainAppContext) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     const currentBehavior = context.getCloseWindowBehavior();
+
+    // 渲染层尚未就绪时，避免请求事件被吞导致“点击 X 无弹窗”。
+    // 这里直接走原生确认框兜底，确保用户始终有可见反馈。
+    if (context.getPendingCloseDecisionRequestId()) return;
+    if (mainWindow.webContents.isLoadingMainFrame()) {
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: "question",
+        buttons: ["取消", "最小化到托盘", "直接退出"],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true,
+        title: "关闭窗口",
+        message: "关闭窗口时你希望如何处理？",
+        detail: "渲染层尚未就绪，已使用原生确认框兜底。",
+      });
+      if (choice === 1) {
+        hideMainWindowToTray();
+      } else if (choice === 2) {
+        requestAppQuit();
+      }
+      return;
+    }
+
     if (currentBehavior === "tray") {
       hideMainWindowToTray();
       return;
@@ -195,5 +246,9 @@ export function createAppShellController(context: MainAppContext) {
     applyCloseDecision,
     ensureTray,
     handleMainWindowCloseRequest,
+    markCloseConfirmDisplayed: (requestId: string) => {
+      if (!requestId) return;
+      displayedCloseConfirmRequestIds.add(requestId);
+    },
   };
 }
