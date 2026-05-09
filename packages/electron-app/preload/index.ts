@@ -148,6 +148,10 @@ export interface ConfigSchema {
   closeWindowBehavior?: "ask" | "tray" | "exit";
   /** 是否已完成过首次连接预载（用于首次连接提示） */
   runtimeWarmupCompleted?: boolean;
+  /** 是否禁用首次连接预载提示弹窗 */
+  runtimeWarmupPromptDisabled?: boolean;
+  /** 关闭首次连接预载提示的版本号（按版本生效） */
+  runtimeWarmupPromptDisabledVersion?: string;
 }
 
 export interface DanmakuAPI {

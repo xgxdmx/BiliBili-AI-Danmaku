@@ -87,6 +87,7 @@ module.exports = async function (context) {
   args.push("--set-product-version", version);
   args.push("--set-version-string", "FileDescription", "BiliBili AI弹幕姬");
   args.push("--set-version-string", "ProductName", "BiliBili AI弹幕姬");
+  args.push("--set-version-string", "InternalName", "bilibili-danmu-claw");
   args.push("--set-version-string", "LegalCopyright", "Copyright © 2026 xgxdmx");
   args.push("--set-version-string", "CompanyName", "xgxdmx");
   args.push("--set-version-string", "OriginalFilename", exeName);

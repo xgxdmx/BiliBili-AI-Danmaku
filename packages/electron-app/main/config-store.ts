@@ -124,6 +124,10 @@ export interface ConfigSchema {
   closeWindowBehavior: CloseWindowBehavior;
   /** 是否已完成过首次连接预载（用于首次连接提示） */
   runtimeWarmupCompleted: boolean;
+  /** 是否禁用首次连接预载提示弹窗 */
+  runtimeWarmupPromptDisabled: boolean;
+  /** 关闭首次连接预载提示的版本号（按版本生效） */
+  runtimeWarmupPromptDisabledVersion: string;
 }
 
 // ─── 默认值 & 常量 ──────────────────────────────────────────
@@ -180,6 +184,8 @@ const schema: ConfigSchema = {
   theme: "system",
   closeWindowBehavior: "ask",
   runtimeWarmupCompleted: false,
+  runtimeWarmupPromptDisabled: false,
+  runtimeWarmupPromptDisabledVersion: "",
 };
 
 // ─── 加密密钥派生 ──────────────────────────────────────────
@@ -298,6 +304,9 @@ function hydrateFromSnapshot(target: Store<ConfigSchema>, snapshot: unknown): vo
   target.set("quickRepliesEnabled", snap.quickRepliesEnabled ?? schema.quickRepliesEnabled);
   target.set("quickReplies", snap.quickReplies || schema.quickReplies);
   target.set("aiModel", snap.aiModel || schema.aiModel);
+  target.set("runtimeWarmupCompleted", snap.runtimeWarmupCompleted ?? schema.runtimeWarmupCompleted);
+  target.set("runtimeWarmupPromptDisabled", snap.runtimeWarmupPromptDisabled ?? schema.runtimeWarmupPromptDisabled);
+  target.set("runtimeWarmupPromptDisabledVersion", snap.runtimeWarmupPromptDisabledVersion ?? schema.runtimeWarmupPromptDisabledVersion);
 }
 
 /**
@@ -393,6 +402,8 @@ export function getConfig(): ConfigSchema {
     theme: store.get("theme", schema.theme),
     closeWindowBehavior: store.get("closeWindowBehavior", schema.closeWindowBehavior),
     runtimeWarmupCompleted: store.get("runtimeWarmupCompleted", schema.runtimeWarmupCompleted),
+    runtimeWarmupPromptDisabled: store.get("runtimeWarmupPromptDisabled", schema.runtimeWarmupPromptDisabled),
+    runtimeWarmupPromptDisabledVersion: store.get("runtimeWarmupPromptDisabledVersion", schema.runtimeWarmupPromptDisabledVersion),
   };
 
   // 迁移旧版 aiModel（扁平结构 → per-provider 结构）
@@ -579,6 +590,8 @@ export function exportConfigToFile(
       },
       closeWindowBehavior: config.closeWindowBehavior || "ask",
       runtimeWarmupCompleted: config.runtimeWarmupCompleted === true,
+      runtimeWarmupPromptDisabled: config.runtimeWarmupPromptDisabled === true,
+      runtimeWarmupPromptDisabledVersion: String(config.runtimeWarmupPromptDisabledVersion || ""),
     };
     const configDir = store.path ? dirname(store.path) : process.cwd();
     const exportPath = targetPath || join(configDir, 'config-export.json');
@@ -651,6 +664,12 @@ export function importConfigFromContent(content: string): { status: string; erro
     }
     if (config.runtimeWarmupCompleted !== undefined) {
       store.set("runtimeWarmupCompleted", config.runtimeWarmupCompleted === true);
+    }
+    if (config.runtimeWarmupPromptDisabled !== undefined) {
+      store.set("runtimeWarmupPromptDisabled", config.runtimeWarmupPromptDisabled === true);
+    }
+    if (config.runtimeWarmupPromptDisabledVersion !== undefined) {
+      store.set("runtimeWarmupPromptDisabledVersion", String(config.runtimeWarmupPromptDisabledVersion || ""));
     }
     if (config.theme) {
       store.set("theme", config.theme);

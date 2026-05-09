@@ -47,6 +47,16 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const WINDOWS_APP_USER_MODEL_ID = "com.bilibili.danmu-claw";
+const APP_DISPLAY_NAME = "BiliBili AI弹幕姬";
+
+// Windows 进程/应用身份标识：
+// - setAppUserModelId: 影响任务栏分组、通知和部分快捷方式显示
+// - setName: 提升任务管理器“应用”分组名称可读性
+if (process.platform === "win32") {
+  app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+  app.setName(APP_DISPLAY_NAME);
+}
 
 // ============================================================
 // DevTools 快捷键开关（需要时可手动修改）

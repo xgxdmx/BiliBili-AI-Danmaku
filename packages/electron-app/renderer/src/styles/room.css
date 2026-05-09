@@ -208,3 +208,16 @@
 
 .status-bar { padding: 8px 12px; background: #9ece6a20; border: 1px solid #9ece6a40; border-radius: 4px; margin-bottom: 12px; font-size: 12px; }
 .status-connected { color: var(--success); font-weight: 500; }
+
+.warmup-confirm-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.warmup-confirm-checkbox {
+  width: 14px;
+  height: 14px;
+}

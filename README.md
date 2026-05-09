@@ -54,7 +54,7 @@
 
 ```
 📺 B站直播间 ──WebSocket──> 🐍 Python 弹幕核心 ──stdio──> ⚡ Electron 主进程
-                                            │
+                                           │
                               ┌────────────┼────────────┐
                               ▼            ▼            ▼
                           🎯 关键词    ⚡固定回复    🤖 AI 中继
@@ -356,6 +356,7 @@ pnpm package:clean
 
 | 版本 | 日期 | 主要改动                                                                                                                                                                                                   |
 |:------:|:--------:|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **v0.5.4** | 2026-05 | 打包链路与首次连接体验修复<br/>• 修复 Windows 打包后主程序图标注入链路（`afterPack` + `rcedit`），避免安装后回退 Electron 默认图标<br/>• 首次连接预载提示改为应用内主题化弹窗（暗色/亮色一致）<br/>• 新增“**不再提示**”勾选项，并调整为“**按版本生效**”：同版本可跳过，升级后会重新提示一次<br/>• 修复覆盖安装后提示偏好读取不一致问题（配置读取链路补齐）<br/>• 构建环境升级至 `pnpm@11.0.9` |
 | **v0.5.1** | 2025-05 | 稳定性修复与安全性加固<br/>• 修复 Python warmup 预热模式因导入副作用导致的 `lost sys.stderr` 异常（`receiver.py` 模块级 `system.ready` 输出移至运行期）<br/>• 修复 blivedm 回调线程直接调用 `asyncio.create_task` 的跨线程 event loop 风险，改用 `run_coroutine_threadsafe`<br/>• 修复 Windows 信号处理器空注册（`add_signal_handler` 不可用时降级到 `signal.signal`）<br/>• 修复 Python 子进程 stdin EOF 后空转不退出（添加 EOF 哨兵与 `_running` 置 False）<br/>• 修复 `shutdown` 信号重复触发导致双重释放（添加 `shutdown_started` 防重入门闩）<br/>• 修复 Electron `second-instance` 场景重复注册 IPC handler 导致的潜在崩溃<br/>• 修复 `app:rendererReady` 监听使用 `removeAllListeners` 的破坏性模式，改为一次性注册守卫<br/>• 修复 AI 回复队列超过 `maxPending` 上限时仅告警不截断，改为丢弃最旧条目并记录决策<br/>• 加固 `shell:openExternal` 仅允许 `http/https` 协议，阻止 `file://` 等危险协议<br/>• Python 弹幕核心全量函数注释规范化（每个 `def` 补齐功能说明与实现思路 docstring） |
 | **v0.5.0** | 2025-05 | 直播间仪表板页面（主播资料卡片、弹幕流、关键词命中排行、AI 队列状态）<br/>• 主播资料查询模块 `bilibili_core_api.py` <br/>• 仪表板聚合器 `dashboard-metrics-store.ts` 下沉主进程 <br/>• 弹幕路由纯函数 `danmaku-routing.ts` 抽离 <br/>• 连接中断功能（连接过程中可随时取消）<br/>• 延后预热策略（进入直播间配置页触发，避免首启卡顿）<br/>• 关键词捕捉开关仅控制关键词链路，不联动固定回复与 AI <br/>• 关键词空态提示修复（`hasEnabledKeywordRules` 全链路贯穿）<br/>• 打包修复（`bilibili_api` 动态子模块收集、UTF-8 编码强制、子进程生命周期优化）<br/>• 版本自动检查（GitHub Release 对比）<br/>• 模型列表更新策略修复 <br/>• 主进程新增 `app-utility-ipc.ts` 工具模块 |
 | **v0.4.0** | 2025-04 | Python 入口 `run.py` → `danmaku.py` 全链路重命名（含 PyInstaller / 构建 / 部署脚本 / 安装器）<br/>• 关于页面新增关闭按钮行为设置（询问/最小化到托盘/直接退出）<br/>• 主进程可读性重构（弹幕路由纯函数、配置 IPC 助手拆分）<br/>• AI 握手兼容增强（多个 fallback 提取路径 + 响应预览诊断）<br/>• 样式外提收尾（所有页面内联样式迁移至独立 CSS） |

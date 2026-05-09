@@ -29,6 +29,7 @@ let roomPrefsReady = false;
 let disconnectSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let roomIdSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let runtimeWarmupWarmedInCurrentSession = false;
+const CURRENT_APP_VERSION = String(__APP_VERSION__ || "dev");
 
 // 解析Cookie
 function parseCookie() {
@@ -142,6 +143,7 @@ let offLoginStatus: (() => void) | null = null;
 // B站连接说明弹窗
 const showBiliHelpModal = ref(false);
 const showWarmupConfirmModal = ref(false);
+const warmupConfirmDontShowAgain = ref(false);
 let warmupConfirmResolver: ((value: boolean) => void) | null = null;
 
 // 连接状态
@@ -240,23 +242,40 @@ async function handleConnect() {
   // 获取关键词配置
   let keywords: any[] = [];
   let runtimeWarmupCompleted = false;
+  let runtimeWarmupPromptDisabled = false;
+  let runtimeWarmupPromptDisabledVersion = "";
   try {
     const config = await window.danmakuAPI?.getConfig();
     keywords = config?.keywords || [];
     runtimeWarmupCompleted = config?.runtimeWarmupCompleted === true;
+    runtimeWarmupPromptDisabled = config?.runtimeWarmupPromptDisabled === true;
+    runtimeWarmupPromptDisabledVersion = String(config?.runtimeWarmupPromptDisabledVersion || "");
   } catch { keywords = []; }
+
+  const isWarmupPromptDisabledForCurrentVersion =
+    runtimeWarmupPromptDisabledVersion === CURRENT_APP_VERSION ||
+    (runtimeWarmupPromptDisabled && runtimeWarmupPromptDisabledVersion === "");
 
   // 弹窗策略：
   // 1) 本次应用会话尚未完成 runtime warmup（主判定）
   // 2) 或持久化标记仍为未完成（兼容首次安装/旧版本升级）
-  if (!runtimeWarmupWarmedInCurrentSession || !runtimeWarmupCompleted) {
+  if ((!runtimeWarmupWarmedInCurrentSession || !runtimeWarmupCompleted) && !isWarmupPromptDisabledForCurrentVersion) {
     const confirmed = await new Promise<boolean>((resolve) => {
+      warmupConfirmDontShowAgain.value = false;
       warmupConfirmResolver = resolve;
       showWarmupConfirmModal.value = true;
     });
     if (!confirmed) {
       statusMsg.value = "已取消连接";
       return;
+    }
+    if (warmupConfirmDontShowAgain.value) {
+      try {
+        await window.danmakuAPI?.setConfig("runtimeWarmupPromptDisabled", true);
+        await window.danmakuAPI?.setConfig("runtimeWarmupPromptDisabledVersion", CURRENT_APP_VERSION);
+      } catch {
+        // 忽略持久化失败，不影响连接流程
+      }
     }
   }
   
@@ -300,6 +319,7 @@ function resolveWarmupConfirm(confirmed: boolean) {
 }
 
 function cancelWarmupConfirm() {
+  warmupConfirmDontShowAgain.value = false;
   resolveWarmupConfirm(false);
 }
 
@@ -521,6 +541,10 @@ async function openPopupLogin() {
           </div>
           <div class="modal-body">
             <p class="warmup-confirm-text">首次启动直播间监听需要进行资源预载，过程可能会出现短暂卡顿。是否继续？</p>
+            <label class="warmup-confirm-checkbox-row">
+              <input v-model="warmupConfirmDontShowAgain" type="checkbox" class="warmup-confirm-checkbox" />
+              <span>不再提示</span>
+            </label>
             <div class="btn-row warmup-confirm-actions">
               <button class="btn btn-accent" @click="resolveWarmupConfirm(true)">确定</button>
               <button class="btn btn-muted" @click="cancelWarmupConfirm">取消</button>
