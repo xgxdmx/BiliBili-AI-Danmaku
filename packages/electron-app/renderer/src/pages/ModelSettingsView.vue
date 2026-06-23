@@ -73,10 +73,16 @@ const providerOptions: ProviderOption[] = [
       {
         label: "── 免费模型 (Zen 免费额度) ──",
         models: [
+          // 最新限时免费模型
+          { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "mimo-v2.5-free", name: "MiMo-V2.5 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "north-mini-code-free", name: "North Mini Code Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "big-pickle", name: "Big Pickle", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          // 既有免费模型（未弃用，保留）
           { id: "minimax-m2.5-free", name: "MiniMax M2.5 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "ling-2.6-flash-free", name: "Ling 2.6 Flash Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "trinity-large-preview-free", name: "Trinity Large Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "big-pickle", name: "Big Pickle", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "hy3-preview-free", name: "Hy3 Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "nemotron-3-super-free", name: "Nemotron 3 Super Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
         ],
@@ -84,25 +90,32 @@ const providerOptions: ProviderOption[] = [
       {
         label: "── Go 方案 ($5→$10/月 订阅) ──",
         models: [
-          { id: "glm-5", name: "GLM-5", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          // GLM 系列（/zen/go/v1/chat/completions）
+          { id: "glm-5.2", name: "GLM-5.2", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
           { id: "glm-5.1", name: "GLM-5.1", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
-          { id: "kimi-k2.5", name: "Kimi K2.5", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          // Kimi 系列（/zen/go/v1/chat/completions）
+          { id: "kimi-k2.7", name: "Kimi K2.7", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
           { id: "kimi-k2.6", name: "Kimi K2.6", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
-          { id: "mimo-v2-pro", name: "MiMo-V2-Pro", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
-          { id: "mimo-v2-omni", name: "MiMo-V2-Omni", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
-          { id: "mimo-v2.5-pro", name: "MiMo-V2.5-Pro", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          // DeepSeek 系列（/zen/go/v1/chat/completions）
+          { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          // MiMo 系列（/zen/go/v1/chat/completions）
           { id: "mimo-v2.5", name: "MiMo-V2.5", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
-          { id: "minimax-m2.5", name: "MiniMax M2.5", endpoint: "https://opencode.ai/zen/go/v1/messages" },
-          { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
-          { id: "qwen3.5-plus", name: "Qwen 3.5 Plus", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "mimo-v2.5-pro", name: "MiMo-V2.5-Pro", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          // MiniMax 系列（/zen/go/v1/messages）
+          { id: "minimax-m3", name: "MiniMax M3", endpoint: "https://opencode.ai/zen/go/v1/messages" },
           { id: "minimax-m2.7", name: "MiniMax M2.7", endpoint: "https://opencode.ai/zen/go/v1/messages" },
-          { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", endpoint: "https://opencode.ai/zen/go/v1/messages" },
-          { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", endpoint: "https://opencode.ai/zen/go/v1/messages" },
+          { id: "minimax-m2.5", name: "MiniMax M2.5", endpoint: "https://opencode.ai/zen/go/v1/messages" },
+          // Qwen 系列（/zen/go/v1/messages）
+          { id: "qwen3.7-max", name: "Qwen3.7 Max", endpoint: "https://opencode.ai/zen/go/v1/messages" },
+          { id: "qwen3.7-plus", name: "Qwen3.7 Plus", endpoint: "https://opencode.ai/zen/go/v1/messages" },
+          { id: "qwen3.6-plus", name: "Qwen3.6 Plus", endpoint: "https://opencode.ai/zen/go/v1/messages" },
         ],
       },
       {
         label: "── Zen 方案 ($20 即用即付) ──",
         models: [
+          // GPT 系列（/zen/v1/responses）
           { id: "gpt-5.5", name: "GPT 5.5", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.5-pro", name: "GPT 5.5 Pro", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.4", name: "GPT 5.4", endpoint: "https://opencode.ai/zen/v1/responses" },
@@ -112,25 +125,42 @@ const providerOptions: ProviderOption[] = [
           { id: "gpt-5.3-codex", name: "GPT 5.3 Codex", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.2", name: "GPT 5.2", endpoint: "https://opencode.ai/zen/v1/responses" },
-          { id: "gpt-5.2-codex", name: "GPT 5.2 Codex", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5.1", name: "GPT 5.1", endpoint: "https://opencode.ai/zen/v1/responses" },
-          { id: "gpt-5.1-codex", name: "GPT 5.1 Codex", endpoint: "https://opencode.ai/zen/v1/responses" },
-          { id: "gpt-5.1-codex-max", name: "GPT 5.1 Codex Max", endpoint: "https://opencode.ai/zen/v1/responses" },
-          { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5", name: "GPT 5", endpoint: "https://opencode.ai/zen/v1/responses" },
-          { id: "gpt-5-codex", name: "GPT 5 Codex", endpoint: "https://opencode.ai/zen/v1/responses" },
           { id: "gpt-5-nano", name: "GPT 5 Nano", endpoint: "https://opencode.ai/zen/v1/responses" },
+          // Claude 系列（/zen/v1/messages）
+          { id: "claude-fable-5", name: "Claude Fable 5", endpoint: "https://opencode.ai/zen/v1/messages" },
+          { id: "claude-opus-4-8", name: "Claude Opus 4.8", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-opus-4-7", name: "Claude Opus 4.7", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-opus-4-6", name: "Claude Opus 4.6", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-opus-4-5", name: "Claude Opus 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-opus-4-1", name: "Claude Opus 4.1", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
-          { id: "claude-sonnet-4", name: "Claude Sonnet 4", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
-          { id: "claude-3-5-haiku", name: "Claude Haiku 3.5", endpoint: "https://opencode.ai/zen/v1/messages" },
+          // Gemini 系列（/zen/v1/models/<id>）
+          { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", endpoint: "https://opencode.ai/zen/v1/models/gemini-3.5-flash" },
           { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", endpoint: "https://opencode.ai/zen/v1/models/gemini-3.1-pro" },
           { id: "gemini-3-flash", name: "Gemini 3 Flash", endpoint: "https://opencode.ai/zen/v1/models/gemini-3-flash" },
+          // Qwen 系列（/zen/v1/messages）
+          { id: "qwen3.7-max", name: "Qwen3.7 Max", endpoint: "https://opencode.ai/zen/v1/messages" },
+          { id: "qwen3.7-plus", name: "Qwen3.7 Plus", endpoint: "https://opencode.ai/zen/v1/messages" },
+          { id: "qwen3.6-plus", name: "Qwen3.6 Plus", endpoint: "https://opencode.ai/zen/v1/messages" },
+          { id: "qwen3.5-plus", name: "Qwen3.5 Plus", endpoint: "https://opencode.ai/zen/v1/messages" },
+          // DeepSeek 系列（/zen/v1/chat/completions）
+          { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          // MiniMax 系列（/zen/v1/chat/completions）
+          { id: "minimax-m2.7", name: "MiniMax M2.7", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "minimax-m2.5", name: "MiniMax M2.5", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          // GLM 系列（/zen/v1/chat/completions）
+          { id: "glm-5.2", name: "GLM 5.2", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "glm-5.1", name: "GLM 5.1", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          // Kimi 系列（/zen/v1/chat/completions）
+          { id: "kimi-k2.5", name: "Kimi K2.5", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "kimi-k2.6", name: "Kimi K2.6", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          // Grok（/zen/v1/chat/completions）
+          { id: "grok-build-0.1", name: "Grok Build 0.1", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
         ],
       },
     ],
@@ -310,12 +340,18 @@ const remoteOpenCodeTierOverrides: Record<string, Exclude<OpenCodeTier, "unknown
  * 不在该列表中的模型即便名字带 free，也不会归入免费分组。
  */
 const ALLOWED_FREE_MODEL_IDS = new Set<string>([
+  // 最新限时免费模型
+  "deepseek-v4-flash-free",
+  "mimo-v2.5-free",
+  "north-mini-code-free",
+  "nemotron-3-ultra-free",
+  "big-pickle",
+  // 既有免费模型（未弃用，保留）
   "minimax-m2.5-free",
   "ling-2.6-flash-free",
   "trinity-large-preview-free",
   "hy3-preview-free",
   "nemotron-3-super-free",
-  "big-pickle",
 ]);
 
 function isFreeModel(modelId: string, modelName?: string): boolean {
@@ -327,6 +363,8 @@ function inferOpenCodeEndpointByModelId(modelId: string): string {
   if (modelId.startsWith("gemini-")) return `https://opencode.ai/zen/v1/models/${modelId}`;
   if (modelId.startsWith("gpt-")) return "https://opencode.ai/zen/v1/responses";
   if (modelId.startsWith("claude-")) return "https://opencode.ai/zen/v1/messages";
+  // Qwen 系列在 Zen 端点走 Anthropic 协议（/zen/v1/messages）
+  if (modelId.startsWith("qwen")) return "https://opencode.ai/zen/v1/messages";
   return "https://opencode.ai/zen/v1/chat/completions";
 }
 

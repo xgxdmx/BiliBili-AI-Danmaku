@@ -75,11 +75,17 @@ for (const dir of dirsToCopy) {
   }
 }
 
+
 const isWin = process.platform === "win32";
 const installArgs = [
   "install",
   "--prod",
   "--ignore-workspace",
+  // .deploy 仅用于 electron-builder 打包，产物已预编译到 out/，
+  // 运行时不需要任何依赖的 postinstall（esbuild 等）。
+  // --ignore-scripts 全局跳过 lifecycle 脚本，避免 pnpm v10+ 在 CI=true 下
+  // 因“未批准的构建脚本（esbuild）”报 ERR_PNPM_IGNORED_BUILDS 而失败。
+  "--ignore-scripts",
   "--no-frozen-lockfile",
   "--config.ignore-workspace-root-check=true",
   "--shamefully-hoist",

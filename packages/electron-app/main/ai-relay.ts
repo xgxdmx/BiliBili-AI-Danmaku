@@ -538,16 +538,27 @@ export class AIRelayManager extends EventEmitter {
 
         try {
           const modelInput = this.formatForModel(item.danmaku);
-          const rawResponse = await this.askModelRaw(this.config, modelInput);
           const decisionId = `d-${item.seq}-${Date.now()}`;
 
-          // 截断检测：finish_reason=length 且 content 为空说明 token 不够
-          const finishReason = rawResponse?.choices?.[0]?.finish_reason;
-          const contentEmpty = !rawResponse?.choices?.[0]?.message?.content;
-          if (finishReason === "length" && contentEmpty) {
+          // 思考型模型（DeepSeek/Qwen3 等）可能在 reasoning 阶段耗尽 max_tokens，
+          // 导致 finish_reason=length 且正文为空。按 首次(思考模型自动≥2048) → 4096 → 8192
+          // 递增预算重试，仍截断才报错。非思考模型首次即 256，通常一次成功。
+          let rawResponse: AIResponseData | null = null;
+          const retryBudgets: Array<number | undefined> = [undefined, 4096, 8192];
+          let lastFinishReason: string | undefined;
+          for (const budget of retryBudgets) {
+            rawResponse = await this.askModelRaw(this.config, modelInput, budget);
+            const fr = rawResponse?.choices?.[0]?.finish_reason;
+            lastFinishReason = fr;
+            const contentEmpty = !rawResponse?.choices?.[0]?.message?.content;
+            // 仅当"截断且正文为空"时才重试；有内容（哪怕被截断）直接采用
+            if (!(fr === "length" && contentEmpty)) break;
+          }
+
+          if (lastFinishReason === "length" && !rawResponse?.choices?.[0]?.message?.content) {
             throw new Error(
-              `模型输出被截断（max_tokens 不足），思考过程耗尽了 token 预算。` +
-              `Ollama thinking 模型建议 max_tokens ≥ 2048。finish_reason=length`,
+              `模型输出被截断（max_tokens 不足），即便提升到 8192 仍未完成思考过程。` +
+              `建议在「大模型」设置页手动调高「最大 Token 数」（思考型模型建议 ≥ 4096）。finish_reason=length`,
             );
           }
 
@@ -612,6 +623,44 @@ export class AIRelayManager extends EventEmitter {
   }
 
   /**
+   * 思考型/推理型模型检测。
+   * 这类模型会先在 reasoning_content 里产出大段思考过程，再给出最终回复；
+   * 思考过程同样计入 max_tokens 配额，256 几乎必然导致 finish_reason=length 且正文为空。
+   * 典型代表：DeepSeek V3/R1、Qwen3 系列、OpenAI o 系列。
+   */
+  private isLikelyThinkingModel(modelId: string): boolean {
+    const id = String(modelId || "").toLowerCase();
+    return (
+      id.includes("deepseek") || // DeepSeek V3/R1 系列（含 deepseek-v4-flash-free）
+      id.includes("reasoner") || // deepseek-reasoner 等
+      id.includes("reasoning") ||
+      id.includes("thinking") ||
+      id.startsWith("qwen3") || // Qwen3 系列默认开启思考
+      /^o[134](\b|-)/.test(id) // OpenAI o1/o3/o4 推理系列
+    );
+  }
+
+  /**
+   * 解析本次请求的实际 max_tokens。
+   * - 显式 override 优先（用于截断重试时临时提升预算）。
+   * - 思考型模型强制下限 2048，避免思考过程耗尽配额导致空回复。
+   * - Ollama 默认 2048，其余默认 256（与历史行为一致）。
+   */
+  private resolveMaxTokens(config: AIRelayConfig, override?: number): number {
+    if (override && override > 0) return override;
+    const configured = Number(config.maxTokens);
+    const userValue = Number.isFinite(configured) && configured > 0 ? configured : null;
+    if (this.isOllamaProvider(config.provider)) {
+      return userValue ?? 2048;
+    }
+    if (this.isLikelyThinkingModel(config.modelId)) {
+      const THINKING_FLOOR = 2048;
+      return Math.max(userValue ?? THINKING_FLOOR, THINKING_FLOOR);
+    }
+    return userValue ?? 256;
+  }
+
+  /**
    * 连接握手验证。
    * Ollama: GET /api/tags 检查服务可用性 + 模型存在性。
    * OpenCode/OpenAI: 发送轻量 completion 测试。
@@ -642,12 +691,12 @@ export class AIRelayManager extends EventEmitter {
   }
 
   /** 返回原始 AI 响应数据（供三层管道处理） */
-  private async askModelRaw(config: AIRelayConfig, userInput: string): Promise<AIResponseData> {
+  private async askModelRaw(config: AIRelayConfig, userInput: string, maxTokensOverride?: number): Promise<AIResponseData> {
     const endpoint = config.endpoint.trim();
     if (endpoint.includes("/messages")) {
-      return this.askAnthropicRaw(endpoint, config, userInput);
+      return this.askAnthropicRaw(endpoint, config, userInput, maxTokensOverride);
     }
-    return this.askOpenAICompatibleRaw(endpoint, config, userInput);
+    return this.askOpenAICompatibleRaw(endpoint, config, userInput, maxTokensOverride);
   }
 
   /**
@@ -655,14 +704,14 @@ export class AIRelayManager extends EventEmitter {
    * 自动识别 Responses API (/responses) 和 Chat Completions API。
    * Ollama 通过 body.keep_alive 和 header X-Ollama-Keep-Alive 控制模型保活。
    */
-  private async askOpenAICompatibleRaw(endpoint: string, config: AIRelayConfig, userInput: string): Promise<AIResponseData> {
+  private async askOpenAICompatibleRaw(endpoint: string, config: AIRelayConfig, userInput: string, maxTokensOverride?: number): Promise<AIResponseData> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
     };
 
     const isOllama = this.isOllamaProvider(config.provider);
-    const maxTokens = Number(config.maxTokens) || (isOllama ? 2048 : 256);
+    const maxTokens = this.resolveMaxTokens(config, maxTokensOverride);
     const temperature = Number(config.temperature) || 0.7;
     const topP = config.topP != null ? Number(config.topP) : undefined;
 
@@ -698,7 +747,7 @@ export class AIRelayManager extends EventEmitter {
   }
 
   /** Anthropic Messages API 请求 */
-  private async askAnthropicRaw(endpoint: string, config: AIRelayConfig, userInput: string): Promise<AIResponseData> {
+  private async askAnthropicRaw(endpoint: string, config: AIRelayConfig, userInput: string, maxTokensOverride?: number): Promise<AIResponseData> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
@@ -707,7 +756,7 @@ export class AIRelayManager extends EventEmitter {
     const body = {
       model: config.modelId,
       system: config.prompt,
-      max_tokens: Number(config.maxTokens) || 256,
+      max_tokens: this.resolveMaxTokens(config, maxTokensOverride),
       messages: [{ role: "user", content: userInput }],
     };
     return this.postJson(endpoint, headers, body);
