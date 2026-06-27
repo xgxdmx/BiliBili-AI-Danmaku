@@ -8,7 +8,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
-  <img src="https://img.shields.io/badge/Electron-41-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/Electron-42-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/Vue_3-4FC08D?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" />
   <img src="https://img.shields.io/badge/License-GPLv3-blue?style=flat-square" alt="License" />
 </p>
@@ -333,7 +333,7 @@ pnpm package:clean
 | 🐍 弹幕核心 | Python 3.13 + [blivedm](https://github.com/xfgryujk/blivedm) + aiohttp |
 | 🔗 进程通信 | JSON-RPC 2.0 over stdio |
 | 🤖 AI 对接 | TypeScript (OpenAI 兼容 API) |
-| ⚡ 桌面客户端 | Electron 41 + Vue 3 + Vite 6 |
+| ⚡ 桌面客户端 | Electron 42 + Vue 3 + Vite 7 |
 | 🔄 状态管理 | Vue 3 Composition API (provide/inject) |
 | 🔒 配置持久化 | electron-store (AES-256-GCM 加密) |
 | 📦 类型共享 | TypeScript project references |

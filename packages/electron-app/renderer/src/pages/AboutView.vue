@@ -13,8 +13,8 @@ const APP_INFO = {
 
 // ─── 技术栈 ─────────────────────────────────────────────────────
 const TECH_STACK = [
-  { name: "Electron", version: "42" },
-  { name: "Vite", version: "6.4" },
+  { name: "Electron", version: "42.5" },
+  { name: "Vite", version: "7" },
   { name: "Vue", version: "3" },
   { name: "Python", version: "3.13" },
   { name: "blivedm", version: "1.1.5" },

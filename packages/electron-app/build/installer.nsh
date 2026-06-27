@@ -5,6 +5,11 @@
 !define ROAMING_DIR_NEW "BiliBiliDanmuClaw"
 !define ROAMING_DIR_PRODUCT "BiliBili AI弹幕姬"
 !define LOCAL_UPDATER_DIR "bilibili-danmu-claw-electron-app-updater"
+; 历史残留目录（本软件旧版/打包名变更遗留，非用户数据，两路卸载都应清理）
+!define ROAMING_DIR_LEGACY "danmuClaw"
+!define LOCAL_UPDATER_DIR_LEGACY "@bilibili-danmaku-clawelectron-app-updater"
+; 注意：不要清理 "$APPDATA\bilibili"（B站官方客户端）和 "$LOCALAPPDATA\bilibili-updater"
+; （非本软件），否则会误删用户其他程序的数据。
 
 ; 卸载前先关闭主程序与 Python runtime 相关进程，避免 userData/缓存目录中的文件被占用，
 ; 导致“选择不保留配置后仍有残留文件”问题。
@@ -53,10 +58,11 @@
 ; （包括默认的 $INSTDIR 清理），因此必须在这里自行处理所有清理工作。
 !macro customRemoveFiles
   ; ===== 步骤 1：询问用户是否保留配置 =====
-  ; /SD IDYES：升级时 electron-builder 会以 /S 静默方式调起旧版卸载器，
-  ; 此时 MessageBox 若无 /SD 默认值会落到下方的 remove_all 分支误删配置。
-  ; 显式指定静默默认 = 保留配置，杜绝"升级即丢配置"。
-  MessageBox MB_ICONQUESTION|MB_YESNO|MB_SETFOREGROUND "是否保留配置文件？$\r$\n$\r$\n选择[是]：仅保留配置文件（config.json 等），其余缓存与运行数据会清理。$\r$\n选择[否]：删除本程序全部数据（含配置、缓存、安装文件）。" /SD IDYES IDYES keep_config IDNO remove_all
+  ; 注意：不要给这个 MessageBox 加 /SD。升级时 electron-builder 会以静默方式调起
+  ; 旧版卸载器，但 NSIS 的 MessageBox 在静默模式下若未指定 /SD 仍会正常弹出
+  ; （用户据此选择保留/清除）。加 /SD IDYES 会抑制弹窗、直接默认保留，反而让
+  ; 用户失去选择机会。配置保留的可靠性由 config-store.ts 的多目录迁移兜底。
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_SETFOREGROUND "是否保留配置文件？$\r$\n$\r$\n选择[是]：仅保留配置文件（config.json 等），其余缓存与运行数据会清理。$\r$\n选择[否]：删除本程序全部数据（含配置、缓存、安装文件）。" IDYES keep_config IDNO remove_all
 
   ; ===== 分支：不保留配置（全部删除） =====
   remove_all:
@@ -73,12 +79,15 @@
   RMDir /r "$APPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_NEW}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_PRODUCT}"
+  RMDir /r "$APPDATA\\${ROAMING_DIR_LEGACY}"
   ; 清理 LocalAppData 下的 Electron/Chromium 缓存残留
   RMDir /r "$LOCALAPPDATA\\${APP_PACKAGE_NAME}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_NEW}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_PRODUCT}"
+  RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_LEGACY}"
   RMDir /r "$LOCALAPPDATA\\${LOCAL_UPDATER_DIR}"
+  RMDir /r "$LOCALAPPDATA\\${LOCAL_UPDATER_DIR_LEGACY}"
 
   ; 恢复 shell 上下文
   ${if} $installMode == "all"
@@ -141,12 +150,15 @@
   RMDir /r "$APPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_NEW}"
   RMDir /r "$APPDATA\\${ROAMING_DIR_PRODUCT}"
+  RMDir /r "$APPDATA\\${ROAMING_DIR_LEGACY}"
   ; LocalAppData 缓存也清理
   RMDir /r "$LOCALAPPDATA\\${APP_PACKAGE_NAME}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_OLD}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_NEW}"
   RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_PRODUCT}"
+  RMDir /r "$LOCALAPPDATA\\${ROAMING_DIR_LEGACY}"
   RMDir /r "$LOCALAPPDATA\\${LOCAL_UPDATER_DIR}"
+  RMDir /r "$LOCALAPPDATA\\${LOCAL_UPDATER_DIR_LEGACY}"
 
   ; ----- 恢复：把暂存的配置文件移回原目录 -----
   ; 目录 1 恢复
