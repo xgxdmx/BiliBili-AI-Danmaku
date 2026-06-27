@@ -190,8 +190,16 @@ const schema: ConfigSchema = {
 
 // ─── 加密密钥派生 ──────────────────────────────────────────
 
-/** 旧版本曾使用的独立配置目录名（与 Electron userData 分离） */
-const LEGACY_ROAMING_CONFIG_DIR_NAME = "BiliBiliDanmuClaw";
+/**
+ * 历史 userData / 独立配置目录名集合（仅覆盖近期版本，老版本不考虑）。
+ * 当前 userData 目录为 "bilibili-danmu-claw"（productName），上一代曾用 "BiliBiliDanmuClaw"。
+ * 升级时 NSIS 会在这些目录间暂存/恢复配置，新版本启动时遍历它们把残留配置导入当前 userData，
+ * 避免"配置文件还在但程序读不到"。仅当目标不存在时才复制，不覆盖用户现有配置。
+ */
+const LEGACY_ROAMING_CONFIG_DIR_NAMES = [
+  "bilibili-danmu-claw", // 当前 productName（主 userData 目录）
+  "BiliBiliDanmuClaw",   // 上一代独立配置目录
+];
 
 /**
  * 获取配置文件目录：
@@ -234,7 +242,6 @@ function migratePackagedConfigToUserDataIfNeeded(): void {
   if (!app.isPackaged) return;
 
   const userDataDir = configDir;
-  const legacyRoamingDir = join(app.getPath("appData"), LEGACY_ROAMING_CONFIG_DIR_NAME);
   const legacyExeDir = dirname(app.getPath("exe"));
 
   const migrationFiles = ["config.json", "config.json.legacy.bak", "config-export.json"];
@@ -254,8 +261,13 @@ function migratePackagedConfigToUserDataIfNeeded(): void {
     }
   };
 
-  // 优先迁移“旧独立配置目录”，其次迁移“exe 同目录”
-  copyIfMissing(legacyRoamingDir);
+  // 遍历所有历史 userData 目录名，任一存在配置就导入当前 userData。
+  // 修复升级后"配置文件还在但程序读不到"的丢失问题（NSIS 在多目录间暂存/恢复，
+  // 而旧版迁移只查单个目录名）。
+  for (const name of LEGACY_ROAMING_CONFIG_DIR_NAMES) {
+    copyIfMissing(join(app.getPath("appData"), name));
+  }
+  // 兜底：更老版本曾把配置放在 exe 同目录
   copyIfMissing(legacyExeDir);
 }
 
