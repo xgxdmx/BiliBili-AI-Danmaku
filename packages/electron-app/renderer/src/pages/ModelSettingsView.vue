@@ -173,6 +173,14 @@ const providerOptions: ProviderOption[] = [
     docUrl: "https://ollama.com/library",
     models: [], // 动态获取，初始为空
   },
+  {
+    id: "custom",
+    name: "自定义 (OpenAI/Anthropic 兼容)",
+    description: "手动填写 API 端点、模型 ID 和 API Key，可对接任何 OpenAI 或 Anthropic 兼容服务，也可访问 OpenCode 未列出/已弃用但仍可用的模型。程序按 Endpoint URL 自动识别协议。",
+    endpoint: "",
+    docUrl: "",
+    models: [],
+  },
 ];
 
 const defaultPrompt = "你现在是一个直播间助理，你会收到粉丝牌+用户名+弹幕内容，请逐条回复，单条回复不超过40字。";
@@ -217,6 +225,15 @@ const providerConfigs = reactive<Record<string, ProviderConfig>>({
     topP: 1,
     ollamaKeepAlive: "5m",
     requestTimeoutMs: 120000,
+  },
+  custom: {
+    modelId: "",
+    apiKey: "",
+    endpoint: "",
+    maxTokens: 256,
+    temperature: 0.7,
+    topP: 1,
+    requestTimeoutMs: 30000,
   },
 });
 
@@ -354,6 +371,31 @@ const ALLOWED_FREE_MODEL_IDS = new Set<string>([
   "nemotron-3-super-free",
 ]);
 
+/**
+ * 已弃用模型黑名单（来源：OpenCode Zen 官方弃用清单）。
+ * 远端 /zen/v1/models 仍会返回部分已弃用模型（如 claude-sonnet-4、glm-5），
+ * 若不过滤，它们会经由"远端新增模型"分组重新出现在 UI 里，用户也可能持有过期选择。
+ * 这里在静态分组过滤 + 远端新增分桶两处都排除，确保弃用模型不再可见、不可选。
+ * 弃用日期标注于注释，便于后续清理。
+ */
+const DEPRECATED_MODEL_IDS = new Set<string>([
+  "gpt-5.2-codex", // 2026-07-23
+  "gpt-5.1-codex", // 2026-07-23
+  "gpt-5.1-codex-max", // 2026-07-23
+  "gpt-5.1-codex-mini", // 2026-07-23
+  "gpt-5-codex", // 2026-07-23
+  "claude-sonnet-4", // 2026-06-15（已过期）
+  "glm-5", // 2026-05-14（已过期）
+  "minimax-m2.1", // 2026-03-15（已过期，远端已移除）
+  "glm-4.7", // 2026-03-15（已过期，远端已移除）
+  "glm-4.6", // 2026-03-15（已过期，远端已移除）
+  "gemini-3-pro", // 2026-03-09（已过期，远端已移除）
+  "kimi-k2-thinking", // 2026-03-06（已过期，远端已移除）
+  "kimi-k2", // 2026-03-06（已过期，远端已移除）
+  "claude-3-5-haiku", // 2026-02-16（已过期，远端已移除）
+  "qwen3-coder-480b", // 2026-02-06（已过期，远端已移除）
+]);
+
 function isFreeModel(modelId: string, modelName?: string): boolean {
   const id = modelId.toLowerCase();
   return ALLOWED_FREE_MODEL_IDS.has(id);
@@ -395,8 +437,8 @@ const modelGroups = computed(() => {
     .map((group) => ({
       ...group,
       models: group.label.includes("Go")
-        ? group.models // Go 分组：不过滤，始终显示
-        : group.models.filter((m) => remoteSet.has(m.id)), // 其余分组：只显示远端存在的
+        ? group.models.filter((m) => !DEPRECATED_MODEL_IDS.has(m.id.toLowerCase())) // Go 分组：始终显示，但排除已弃用
+        : group.models.filter((m) => remoteSet.has(m.id) && !DEPRECATED_MODEL_IDS.has(m.id.toLowerCase())), // 其余分组：远端存在且未弃用
     }))
     .filter((group) => group.models.length > 0);
 
@@ -430,7 +472,10 @@ const modelGroups = computed(() => {
     unknown: [],
   };
 
-  const remoteOnlyIds = opencodeRemoteIds.value.filter((id) => !staticModelIds.has(id));
+  // 远端新增分桶时排除已弃用模型（远端仍会返回 claude-sonnet-4 / glm-5 等，需主动屏蔽）
+  const remoteOnlyIds = opencodeRemoteIds.value.filter(
+    (id) => !staticModelIds.has(id) && !DEPRECATED_MODEL_IDS.has(id.toLowerCase()),
+  );
   for (const id of remoteOnlyIds) {
     const tier = classifyRemoteOpenCodeTier(id);
     remoteOnlyByTier[tier].push({
@@ -601,7 +646,8 @@ watch(
     if (newProviderId === "ollama") {
       form.endpoint = `${ollamaBaseUrl.value.replace(/\/+$/, "")}/v1/chat/completions`;
       fetchOllamaModelList();
-    } else {
+    } else if (newProviderId !== "custom") {
+      // 自定义供应商无模型列表，modelId 由用户手填，不做存在性校验
       if (!provider.models.some((m) => m.id === form.modelId) && !modelOptions.value.some((m) => m.id === form.modelId)) {
         form.modelId = modelOptions.value[0]?.id || "";
       }
@@ -989,7 +1035,26 @@ onUnmounted(() => {
         </div>
       </template>
 
-      <!-- 非 Ollama: 固定模型列表 + API Key -->
+      <!-- 自定义供应商: 手填模型 ID + API Key（端点在下方 Endpoint 字段） -->
+      <template v-else-if="form.provider === 'custom'">
+        <div class="field">
+          <label class="field-label">模型 ID</label>
+          <input v-model="form.modelId" type="text" placeholder="例如 claude-sonnet-4 / gpt-5.5 / deepseek-v4-flash" class="field-input" />
+          <div class="msg-inline">填入目标服务支持的模型 ID（区分大小写）。端点在下方 Endpoint 字段填写，按 URL 自动识别 OpenAI / Anthropic 协议。</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label">API Key</label>
+          <div class="apikey-row">
+            <input v-model="form.apiKey" :type="showApiKey ? 'text' : 'password'" placeholder="输入 API Key（OpenAI 兼容用 Bearer 鉴权）" class="field-input apikey-input" />
+            <button class="btn btn-muted apikey-toggle" @click="showApiKey = !showApiKey">
+              {{ showApiKey ? '隐藏' : '显示' }}
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <!-- OpenCode: 固定模型列表 + API Key -->
       <template v-else>
         <div class="field">
           <label class="field-label">模型</label>
@@ -1043,8 +1108,11 @@ onUnmounted(() => {
 
       <div class="field">
         <label class="field-label">Endpoint</label>
-        <input v-model="form.endpoint" type="text" class="field-input" :readonly="form.provider !== 'ollama'" />
+        <input v-model="form.endpoint" type="text" class="field-input" :readonly="form.provider !== 'ollama' && form.provider !== 'custom'" placeholder="https://..." />
         <div v-if="form.provider === 'ollama'" class="msg-inline">Ollama 使用 OpenAI 兼容接口，可修改为远程服务器地址</div>
+        <div v-else-if="form.provider === 'custom'" class="msg-inline">
+          OpenAI 兼容填 <code>.../v1/chat/completions</code> 或 <code>.../v1/responses</code>；Anthropic 兼容填 <code>.../v1/messages</code>。程序按 URL 自动选择请求协议。
+        </div>
       </div>
 
       <div class="field field-inline-2">

@@ -189,23 +189,31 @@ type AIResponseData = any;
 // ─── 响应文本提取 ──────────────────────────────────────────
 
 /**
+ * 清理思考型模型的推理过程标签。
+ * 思考型模型（DeepSeek/Qwen3/Nemotron 等）有时会把 reasoning 混进 content，
+ * 而不是单独放 reasoning_content 字段。Ollama 和 OpenCode 代理的思考模型都可能泄漏。
+ * 非思考模型不产生这些标签，清理对它们是 no-op，安全。
+ */
+function stripThinkTags(text: string): string {
+  return text
+    .replace(/<think[\s\S]*?<\/think>/gi, "")
+    .replace(/<thinking[\s\S]*?<\/thinking>/gi, "")
+    .replace(/<reasoning[\s\S]*?<\/reasoning>/gi, "")
+    .replace(/\n+/g, " ")
+    .trim();
+}
+
+/**
  * 从 AI 响应中提取最终回复文本。
- * Ollama 的 content 可能包含 <think/> 标签，需清理。
+ * 所有 provider 的 content 统一经 stripThinkTags 清理思考标签（DeepSeek/Qwen3 等
+ * 思考型模型可能把 reasoning 混进 content）。非思考模型不受影响。
  */
 function extractReplyText(data: AIResponseData, provider: string): string | null {
   const choiceText = normalizeAnyText(data?.choices?.[0]?.message?.content);
   if (choiceText) {
-    if (provider === "ollama") {
-      // Ollama content 可能混入 <think/</think 标签
-      const cleaned = choiceText
-        .replace(/<think[\s\S]*?<\/think>/gi, "")
-        .replace(/<thinking[\s\S]*?<\/thinking>/gi, "")
-        .replace(/\n+/g, " ")
-        .trim();
-      if (cleaned) return cleaned;
-    } else {
-      return choiceText;
-    }
+    // 统一清理思考标签（原仅 Ollama 清理，但 OpenCode 代理的思考模型同样会泄漏到 content）
+    const cleaned = stripThinkTags(choiceText);
+    if (cleaned) return cleaned;
   }
 
   // 多级 fallback
@@ -268,6 +276,12 @@ export class AIRelayManager extends EventEmitter {
   private readonly echoGuards: Array<{ text: string; expiresAt: number; remaining: number }> = [];
   /** 最近决策记录，环形缓冲区（max 50），供 UI 预览 */
   private readonly recentDecisions: AIReplyDecision[] = [];
+  /**
+   * 运行期发现的隐身思考模型（底层是思考模型但 id 不含特征词，如 big-pickle 实为 deepseek-v4-flash）。
+   * 当响应 content 为空但 reasoning_content 非空时记入，后续请求直接用思考型 token 预算，
+   * 避免每条弹幕都走 256 失败 → 4096 重试的两轮开销。
+   */
+  private readonly discoveredThinkingModels = new Set<string>();
 
   constructor(private readonly sendDanmaku: (msg: string) => Promise<unknown>) {
     super();
@@ -476,6 +490,14 @@ export class AIRelayManager extends EventEmitter {
         return { skip: true, reason: `命中跳过标记: ${rule.raw}` };
       }
     }
+    // 防御：代码模型（north-mini-code 等）有时返回代码片段而非弹幕回复。
+    // 检测明显编程结构 → 跳过，避免代码污染直播间。保留 B 站常见弹幕（2333/666/GG/awsl 等）。
+    const lower = normalized.toLowerCase();
+    const hasCodeKeyword = /\b(function|console|printf?|import|export|require|lambda|void|undefined|return)\b/.test(lower);
+    const hasCodeSyntax = /=>/.test(normalized) || /[{}]/.test(normalized);
+    if (hasCodeKeyword || (hasCodeSyntax && /[a-z]{3,}/i.test(normalized))) {
+      return { skip: true, reason: "回复疑似代码片段，代码模型未遵循弹幕指令（建议换对话型模型）" };
+    }
     return { skip: false, reason: "" };
   }
 
@@ -540,32 +562,17 @@ export class AIRelayManager extends EventEmitter {
           const modelInput = this.formatForModel(item.danmaku);
           const decisionId = `d-${item.seq}-${Date.now()}`;
 
-          // 思考型模型（DeepSeek/Qwen3 等）可能在 reasoning 阶段耗尽 max_tokens，
-          // 导致 finish_reason=length 且正文为空。按 首次(思考模型自动≥2048) → 4096 → 8192
-          // 递增预算重试，仍截断才报错。非思考模型首次即 256，通常一次成功。
-          let rawResponse: AIResponseData | null = null;
-          const retryBudgets: Array<number | undefined> = [undefined, 4096, 8192];
-          let lastFinishReason: string | undefined;
-          for (const budget of retryBudgets) {
-            rawResponse = await this.askModelRaw(this.config, modelInput, budget);
-            const fr = rawResponse?.choices?.[0]?.finish_reason;
-            lastFinishReason = fr;
-            const contentEmpty = !rawResponse?.choices?.[0]?.message?.content;
-            // 仅当"截断且正文为空"时才重试；有内容（哪怕被截断）直接采用
-            if (!(fr === "length" && contentEmpty)) break;
-          }
+          // 思考型/隐身思考模型可能在 reasoning 耗尽预算导致正文为空，
+          // askModelWithRetry 按 2048→4096→8192 递增预算重试（握手与弹幕路径共用）。
+          const rawResponse = await this.askModelWithRetry(this.config, modelInput);
 
-          if (lastFinishReason === "length" && !rawResponse?.choices?.[0]?.message?.content) {
-            throw new Error(
-              `模型输出被截断（max_tokens 不足），即便提升到 8192 仍未完成思考过程。` +
-              `建议在「大模型」设置页手动调高「最大 Token 数」（思考型模型建议 ≥ 4096）。finish_reason=length`,
-            );
-          }
-
-          // 提取回复文本（Ollama 的 <think/> 标签在 extractReplyText 内清理）
+          // 提取回复文本（思考标签在 extractReplyText 内统一清理）
           const replyText = extractReplyText(rawResponse, this.config.provider);
           if (!replyText) {
-            throw new Error(`未能解析模型回复，响应预览: ${responsePreview(rawResponse)}`);
+            throw new Error(
+              `未能解析模型回复（即便提升到 8192 token 仍无正文）。` +
+              `响应预览: ${responsePreview(rawResponse)}`,
+            );
           }
           const text = clampText(replyText, 40);
 
@@ -653,7 +660,7 @@ export class AIRelayManager extends EventEmitter {
     if (this.isOllamaProvider(config.provider)) {
       return userValue ?? 2048;
     }
-    if (this.isLikelyThinkingModel(config.modelId)) {
+    if (this.isLikelyThinkingModel(config.modelId) || this.discoveredThinkingModels.has(config.modelId)) {
       const THINKING_FLOOR = 2048;
       return Math.max(userValue ?? THINKING_FLOOR, THINKING_FLOOR);
     }
@@ -680,7 +687,9 @@ export class AIRelayManager extends EventEmitter {
         throw new Error(`Ollama 未找到模型 "${config.modelId}"，可用: ${models.join(", ") || "无"}`);
       }
     } else {
-      const rawResponse = await this.askModelRaw(config, "连接握手测试：请仅回复「已就绪」。");
+      // 握手也走 askModelWithRetry：隐身思考模型（big-pickle）首次握手 content 常为空，
+      // 需要重试拿到正文，否则 connect() 直接抛错无法进入队列。
+      const rawResponse = await this.askModelWithRetry(config, "连接握手测试：请仅回复「已就绪」。");
       const replyText = extractReplyText(rawResponse, config.provider);
       if (!replyText) {
         const preview = responsePreview(rawResponse);
@@ -697,6 +706,31 @@ export class AIRelayManager extends EventEmitter {
       return this.askAnthropicRaw(endpoint, config, userInput, maxTokensOverride);
     }
     return this.askOpenAICompatibleRaw(endpoint, config, userInput, maxTokensOverride);
+  }
+
+  /**
+   * 调用模型并在回复无法提取时按递增 token 预算重试。
+   * 握手（verifyConnection）与弹幕回复（processQueue）共用，覆盖两类"正文为空"场景：
+   *  1. finish_reason=length 且 content 空 —— 思考型模型（DeepSeek/Qwen3）reasoning 耗尽预算
+   *  2. content 空 + reasoning_content 非空 —— 隐身思考模型（big-pickle 等，底层实为 deepseek，
+   *     但 model id 不含特征词，isLikelyThinkingModel 漏判）content 未生成
+   * 第 2 类会记入 discoveredThinkingModels，后续请求首次即用思考型预算，避免两轮开销。
+   * 预算序列：首次（思考模型自动≥2048，其他 256）→ 4096 → 8192。
+   */
+  private async askModelWithRetry(config: AIRelayConfig, userInput: string): Promise<AIResponseData> {
+    const retryBudgets: Array<number | undefined> = [undefined, 4096, 8192];
+    let rawResponse: AIResponseData | undefined;
+    for (const budget of retryBudgets) {
+      rawResponse = await this.askModelRaw(config, userInput, budget);
+      if (extractReplyText(rawResponse, config.provider)) break; // 拿到可提取正文就停止
+      // 正文为空：若 reasoning_content 有内容，判定为隐身思考模型并记住
+      const reasoning = rawResponse?.choices?.[0]?.message?.reasoning_content;
+      if (reasoning && String(reasoning).trim()) {
+        this.discoveredThinkingModels.add(config.modelId);
+      }
+    }
+    // 循环至少执行一次，rawResponse 必定已赋值
+    return rawResponse as AIResponseData;
   }
 
   /**

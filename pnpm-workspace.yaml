@@ -1,5 +1,18 @@
 packages:
   - "packages/*"
+
 allowBuilds:
-  electron-winstaller: true
-  esbuild: true
+  electron-winstaller: set this to true or false
+  esbuild: set this to true or false
+
+# pnpm v10+ 的依赖构建白名单（原 package.json 的 pnpm.onlyBuiltDependencies 字段
+# 在 pnpm 11.9 已不再读取，统一迁移到这里）。仅对实际安装的包生效。
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+  - esbuild
+  - sharp
+  - "@matrix-org/matrix-sdk-crypto-nodejs"
+  - koffi
+  - protobufjs
+  - openclaw
