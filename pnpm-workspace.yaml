@@ -1,18 +1,16 @@
 packages:
   - "packages/*"
 
+# pnpm v11 构建脚本白名单（pnpm v11 已移除 onlyBuiltDependencies 列表，
+# 改用 allowBuilds 映射：pkg: true 允许 postinstall，false 显式拒绝）。
+# strictDepBuilds 在 v11 默认为 true，未在此声明的构建脚本会导致
+# ERR_PNPM_IGNORED_BUILDS 并以退出码 1 终止 CI。
 allowBuilds:
-  electron-winstaller: set this to true or false
-  esbuild: set this to true or false
-
-# pnpm v10+ 的依赖构建白名单（原 package.json 的 pnpm.onlyBuiltDependencies 字段
-# 在 pnpm 11.9 已不再读取，统一迁移到这里）。仅对实际安装的包生效。
-onlyBuiltDependencies:
-  - electron
-  - electron-winstaller
-  - esbuild
-  - sharp
-  - "@matrix-org/matrix-sdk-crypto-nodejs"
-  - koffi
-  - protobufjs
-  - openclaw
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  sharp: true
+  "@matrix-org/matrix-sdk-crypto-nodejs": true
+  koffi: true
+  protobufjs: true
+  openclaw: true
