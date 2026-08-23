@@ -316,7 +316,9 @@ class KeywordFilter {
     this.regexCache.clear();
     for (const rule of this.rules) {
       if (rule.type === "regex") {
-        try { this.regexCache.set(rule.id, new RegExp(rule.pattern)); }
+        // 与 keyword 分支一致：默认忽略大小写，caseSensitive=true 时区分
+        const flags = rule.caseSensitive ? "" : "i";
+        try { this.regexCache.set(rule.id, new RegExp(rule.pattern, flags)); }
         catch { /* skip invalid regex */ }
       }
     }

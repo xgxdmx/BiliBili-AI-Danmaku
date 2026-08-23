@@ -160,7 +160,7 @@ const schema: ConfigSchema = {
     skipReplies: ["NO_REPLY", "无需回复", "不需要回复", "不用回复", "不回复", "忽略", "skip", "pass"],
     providers: {
       opencode: {
-        modelId: "minimax-m2.5-free",
+        modelId: "mimo-v2.5-free",
         apiKey: "",
         endpoint: "https://opencode.ai/zen/v1/chat/completions",
         maxTokens: 256,
@@ -447,7 +447,7 @@ function migrateAIModel(ai: any): AIModelConfig {
     skipReplies: ai.skipReplies || schema.aiModel.skipReplies,
     providers: {
       opencode: {
-        modelId: oldProvider === "opencode" ? (ai.modelId || "minimax-m2.5-free") : "minimax-m2.5-free",
+        modelId: oldProvider === "opencode" ? (ai.modelId || "mimo-v2.5-free") : "mimo-v2.5-free",
         apiKey: (ai.apiKeys && ai.apiKeys.opencode) || ai.apiKey || "",
         endpoint: oldProvider === "opencode" ? (ai.endpoint || "https://opencode.ai/zen/v1/chat/completions") : "https://opencode.ai/zen/v1/chat/completions",
         maxTokens: Number(oldProvider === "opencode" ? (ai.maxTokens || 256) : 256),
@@ -625,6 +625,45 @@ export function importConfigFromFile(filePath: string): { status: string; error?
 }
 
 /**
+ * 导入 aiModel 的最小形状校验。
+ * 只接受符合预期类型的字段，非法字段回退默认/空值，
+ * 避免导入被手改坏的 JSON（如 keywords 写成字符串、providers 写成数组）后，
+ * 后续 .filter/.map 调用持续崩溃、普通用户难以自救。
+ */
+function sanitizeImportedAIModel(raw: unknown): AIModelConfig {
+  const src = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const base = schema.aiModel;
+
+  const providers: Record<string, ProviderConfig> = {};
+  if (src.providers && typeof src.providers === "object" && !Array.isArray(src.providers)) {
+    for (const [pid, value] of Object.entries(src.providers as Record<string, unknown>)) {
+      const p = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
+      providers[pid] = {
+        modelId: typeof p.modelId === "string" ? p.modelId : "",
+        apiKey: typeof p.apiKey === "string" ? p.apiKey : "",
+        endpoint: typeof p.endpoint === "string" ? p.endpoint : "",
+        ...(typeof p.ollamaBaseUrl === "string" ? { ollamaBaseUrl: p.ollamaBaseUrl } : {}),
+        maxTokens: Number.isFinite(Number(p.maxTokens)) && Number(p.maxTokens) > 0 ? Number(p.maxTokens) : 256,
+        temperature: Number.isFinite(Number(p.temperature)) ? Number(p.temperature) : 0.7,
+        topP: Number.isFinite(Number(p.topP)) ? Number(p.topP) : 1,
+        ...(typeof p.ollamaKeepAlive === "string" ? { ollamaKeepAlive: p.ollamaKeepAlive } : {}),
+        requestTimeoutMs: Number.isFinite(Number(p.requestTimeoutMs)) && Number(p.requestTimeoutMs) > 0 ? Number(p.requestTimeoutMs) : 30000,
+      };
+    }
+  }
+
+  return {
+    provider: typeof src.provider === "string" ? src.provider : base.provider,
+    prompt: typeof src.prompt === "string" ? src.prompt : base.prompt,
+    sendIntervalMs: Number.isFinite(Number(src.sendIntervalMs)) && Number(src.sendIntervalMs) > 0 ? Number(src.sendIntervalMs) : base.sendIntervalMs,
+    maxPending: Number.isFinite(Number(src.maxPending)) && Number(src.maxPending) > 0 ? Number(src.maxPending) : base.maxPending,
+    ignoreUsernames: Array.isArray(src.ignoreUsernames) ? src.ignoreUsernames.filter((x): x is string => typeof x === "string") : [],
+    skipReplies: Array.isArray(src.skipReplies) ? src.skipReplies.filter((x): x is string => typeof x === "string") : base.skipReplies,
+    providers,
+  };
+}
+
+/**
  * 从 JSON 字符串导入配置。
  * 支持两种格式：
  *   - plain-v2：直接 JSON，按字段验证后写入 store
@@ -661,17 +700,30 @@ export function importConfigFromContent(content: string): { status: string; erro
 
     const config = unwrapConfig(parsed) as Partial<ConfigSchema>;
 
-    // 验证并保存每个字段
-    if (config.room) store.set("room", config.room);
-    if (config.credentials) store.set("credentials", config.credentials);
+    // 验证并保存每个字段。仅接受符合预期形状的字段，非法类型跳过而不写入，
+    // 避免导入损坏 JSON 后后续 .filter/.map 调用崩溃。
+    if (config.room && typeof config.room === "object" && !Array.isArray(config.room)) {
+      store.set("room", config.room);
+    }
+    if (config.credentials && typeof config.credentials === "object" && !Array.isArray(config.credentials)) {
+      store.set("credentials", config.credentials);
+    }
     if (config.quickReplyEnabled !== undefined) {
       store.set("quickReplyEnabled", config.quickReplyEnabled === true);
     }
-    if (config.keywords) store.set("keywords", config.keywords);
-    store.set("quickRepliesEnabled", config.quickRepliesEnabled ?? schema.quickRepliesEnabled);
-    if (config.quickReplies) store.set("quickReplies", config.quickReplies);
-    if (config.aiModel) store.set("aiModel", config.aiModel);
-    if (config.closeWindowBehavior) {
+    if (Array.isArray(config.keywords)) {
+      store.set("keywords", config.keywords);
+    }
+    if (config.quickRepliesEnabled !== undefined) {
+      store.set("quickRepliesEnabled", config.quickRepliesEnabled === true);
+    }
+    if (Array.isArray(config.quickReplies)) {
+      store.set("quickReplies", config.quickReplies);
+    }
+    if (config.aiModel && typeof config.aiModel === "object" && !Array.isArray(config.aiModel)) {
+      store.set("aiModel", sanitizeImportedAIModel(config.aiModel));
+    }
+    if (config.closeWindowBehavior && typeof config.closeWindowBehavior === "string") {
       store.set("closeWindowBehavior", config.closeWindowBehavior as CloseWindowBehavior);
     }
     if (config.runtimeWarmupCompleted !== undefined) {

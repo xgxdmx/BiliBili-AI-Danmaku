@@ -463,6 +463,13 @@ function createWindow(): void {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
   );
 
+  // 安全加固：阻止渲染层任何意外导航到外部页面（否则 danmakuAPI 桥会暴露给被加载的远端内容），
+  // 并拒绝所有 window.open / target=_blank 新窗口请求。SPA 走 hash 路由，不受影响。
+  mainWindow.webContents.on("will-navigate", (event) => {
+    event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
   if (process.env.ELECTRON_RENDERER_URL) {
     logger.log("Loading URL:", process.env.ELECTRON_RENDERER_URL);
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);

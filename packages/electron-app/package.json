@@ -1,6 +1,6 @@
 {
   "name": "bilibili-danmu-claw-electron-app",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "type": "module",
   "private": true,
   "description": "BiliBili AI弹幕姬",
@@ -76,17 +76,17 @@
   },
   "dependencies": {
     "electron-store": "^11.0.2",
-    "vue": "^3.5.34",
-    "vue-router": "^5.0.6"
+    "vue": "^3.5.41",
+    "vue-router": "^5.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.6",
-    "electron": "42.5.0",
-    "electron-builder": "^26.8.1",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "electron": "43.4.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "rcedit": "^4.0.1",
     "typescript": "^6.0.3",
     "vite": "^7.0.0",
-    "vue-tsc": "^3.2.8"
+    "vue-tsc": "^3.3.11"
   }
 }

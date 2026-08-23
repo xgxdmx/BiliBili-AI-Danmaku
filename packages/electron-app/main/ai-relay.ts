@@ -109,7 +109,10 @@ function parseSkipRegex(entry: string): RegExp | null {
   const match = /^\/(.+)\/([gimsuy]*)$/.exec(entry);
   if (!match) return null;
   try {
-    return new RegExp(match[1], match[2]);
+    // 剥掉 g/y 标志：带 g/y 的 RegExp 的 .test() 会推进 lastIndex（有状态），
+    // 同一对象跨弹幕复用时会导致"隔一条漏一条"。
+    const flags = match[2].replace(/[gy]/g, "");
+    return new RegExp(match[1], flags);
   } catch {
     return null;
   }
@@ -569,9 +572,11 @@ export class AIRelayManager extends EventEmitter {
           // 提取回复文本（思考标签在 extractReplyText 内统一清理）
           const replyText = extractReplyText(rawResponse, this.config.provider);
           if (!replyText) {
+            const preview = responsePreview(rawResponse);
+            const shortPreview = preview.length > 280 ? `${preview.slice(0, 280)}...` : preview;
             throw new Error(
               `未能解析模型回复（即便提升到 8192 token 仍无正文）。` +
-              `响应预览: ${responsePreview(rawResponse)}`,
+              `响应预览: ${shortPreview}`,
             );
           }
           const text = clampText(replyText, 40);
@@ -638,7 +643,7 @@ export class AIRelayManager extends EventEmitter {
   private isLikelyThinkingModel(modelId: string): boolean {
     const id = String(modelId || "").toLowerCase();
     return (
-      id.includes("deepseek") || // DeepSeek V3/R1 系列（含 deepseek-v4-flash-free）
+      id.includes("deepseek") || // DeepSeek 系列（v4-pro / v4-flash / reasoner 等）
       id.includes("reasoner") || // deepseek-reasoner 等
       id.includes("reasoning") ||
       id.includes("thinking") ||

@@ -25,7 +25,14 @@ async function getCredentialCookiesFromElectronSession(targetWin: BrowserWindow)
 }> {
   const cookieStore = targetWin.webContents.session.cookies;
   const allCookies = await cookieStore.get({});
-  const getCookie = (name: string): string => allCookies.find((c) => c.name === name)?.value || "";
+  // 仅接受 bilibili.com 及其子域下的 Cookie，避免登录窗口被重定向到第三方页面时
+  // 误抓同名的 SESSDATA / bili_jct / buvid3。
+  const isBilibiliDomain = (domain: string | undefined): boolean => {
+    const d = String(domain || "").toLowerCase();
+    return d === "bilibili.com" || d.endsWith(".bilibili.com");
+  };
+  const getCookie = (name: string): string =>
+    allCookies.find((c) => c.name === name && isBilibiliDomain(c.domain))?.value || "";
   return {
     sessdata: getCookie("SESSDATA"),
     biliJct: getCookie("bili_jct"),

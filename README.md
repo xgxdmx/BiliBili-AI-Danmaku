@@ -282,7 +282,7 @@ pnpm package:clean
     "skipReplies": ["NO_REPLY", "无需回复", "忽略"],
     "providers": {
       "opencode": {
-        "modelId": "minimax-m2.5-free",
+        "modelId": "mimo-v2.5-free",
         "apiKey": "sk-***",
         "endpoint": "https://opencode.ai/zen/v1/chat/completions",
         "temperature": 0.7,
@@ -356,6 +356,7 @@ pnpm package:clean
 
 | 版本 | 日期 | 主要改动                                                                                                                                                                                                   |
 |:------:|:--------:|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **v0.5.6** | 2026-08 | 模型列表校对与安全加固<br/>• 免费模型列表按 `/zen/v1/models` 远端实测校准：移除已下线的 `minimax-m2.5-free`、`deepseek-v4-flash-free`、`north-mini-code-free`、`ling-2.6-flash-free`、`trinity-large-preview-free`、`hy3-preview-free`、`nemotron-3-super-free`，以及 `kimi-k2.7`、`claude-opus-4-1`；默认模型改为 `mimo-v2.5-free`<br/>• 失效模型加入弃用黑名单，防远端列表滞后回显<br/>• 安全加固：主窗口阻止意外导航与新窗口（`will-navigate` + `setWindowOpenHandler`）、登录 Cookie 按 `.bilibili.com` 域名过滤、配置导入增加最小形状校验防损坏 JSON 崩溃<br/>• 正确性修复：跳过正则剥除 `g`/`y` 标志（修复"隔一条漏一条"）、正则关键词遵循大小写开关、AI 响应预览截断防 IPC 放大<br/>• 依赖升级：Electron 42→43、Vue 3.5.41、electron-builder 26.15.3、vue-router 5.2.0、vue-tsc 3.3.11 |
 | **v0.5.5** | 2026-06 | 大模型供应商与思考型模型支持增强<br/>• 新增「自定义」供应商：手填 API 端点 / 模型 ID / API Key，可对接任意 OpenAI 或 Anthropic 兼容服务（含 OpenCode 未列出 / 已弃用但仍可用的模型），按 Endpoint URL 自动识别协议<br/>• OpenCode 模型列表全量更新：Free / Go / Zen 三档分组，新增 GPT 5.5、Claude Fable 5、Claude Opus 4.8、Gemini 3.5 Flash、Qwen3.7、Grok Build 0.1 等；移除已弃用模型<br/>• 远端弃用模型黑名单：`claude-sonnet-4`、`glm-5` 等不再经由「远端新增模型」分组回显<br/>• DeepSeek 等思考型模型修复：`max_tokens` 自适应（思考型 ≥ 2048）+ 截断自动重试（2048→4096→8192），解决 token 超长导致的空回复<br/>• 思考标签（`<think>` / `<reasoning>`）清理扩展到所有 provider，防 reasoning 泄漏成弹幕<br/>• Big Pickle（隐身思考模型）握手失败修复：响应式重试 + 运行期发现机制<br/>• 代码模型（north-mini-code 等）代码片段回复过滤，保留 B 站常见弹幕（2333 / 666 / GG）<br/>• 打包脚本修复：`.deploy` 安装加 `--ignore-scripts`，解决 pnpm 在 CI 下因 esbuild 构建脚本被忽略而打包失败<br/>• 构建环境升级至 `pnpm@11.9.0`，`onlyBuiltDependencies` 迁移至 `pnpm-workspace.yaml` |
 | **v0.5.4** | 2026-05 | 打包链路与首次连接体验修复<br/>• 修复 Windows 打包后主程序图标注入链路（`afterPack` + `rcedit`），避免安装后回退 Electron 默认图标<br/>• 首次连接预载提示改为应用内主题化弹窗（暗色/亮色一致）<br/>• 新增“**不再提示**”勾选项，并调整为“**按版本生效**”：同版本可跳过，升级后会重新提示一次<br/>• 修复覆盖安装后提示偏好读取不一致问题（配置读取链路补齐）<br/>• 构建环境升级至 `pnpm@11.0.9` |
 | **v0.5.1** | 2025-05 | 稳定性修复与安全性加固<br/>• 修复 Python warmup 预热模式因导入副作用导致的 `lost sys.stderr` 异常（`receiver.py` 模块级 `system.ready` 输出移至运行期）<br/>• 修复 blivedm 回调线程直接调用 `asyncio.create_task` 的跨线程 event loop 风险，改用 `run_coroutine_threadsafe`<br/>• 修复 Windows 信号处理器空注册（`add_signal_handler` 不可用时降级到 `signal.signal`）<br/>• 修复 Python 子进程 stdin EOF 后空转不退出（添加 EOF 哨兵与 `_running` 置 False）<br/>• 修复 `shutdown` 信号重复触发导致双重释放（添加 `shutdown_started` 防重入门闩）<br/>• 修复 Electron `second-instance` 场景重复注册 IPC handler 导致的潜在崩溃<br/>• 修复 `app:rendererReady` 监听使用 `removeAllListeners` 的破坏性模式，改为一次性注册守卫<br/>• 修复 AI 回复队列超过 `maxPending` 上限时仅告警不截断，改为丢弃最旧条目并记录决策<br/>• 加固 `shell:openExternal` 仅允许 `http/https` 协议，阻止 `file://` 等危险协议<br/>• Python 弹幕核心全量函数注释规范化（每个 `def` 补齐功能说明与实现思路 docstring） |

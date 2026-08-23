@@ -73,18 +73,14 @@ const providerOptions: ProviderOption[] = [
       {
         label: "── 免费模型 (Zen 免费额度) ──",
         models: [
-          // 最新限时免费模型
-          { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          // 免费模型（2026-08 按 /zen/v1/models 远端实测校准）
           { id: "mimo-v2.5-free", name: "MiMo-V2.5 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "north-mini-code-free", name: "North Mini Code Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "hy3-free", name: "Hy3 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "laguna-s-2.1-free", name: "Laguna S 2.1 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
+          { id: "x-preview-f-free", name: "X Preview F Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
           { id: "big-pickle", name: "Big Pickle", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          // 既有免费模型（未弃用，保留）
-          { id: "minimax-m2.5-free", name: "MiniMax M2.5 Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "ling-2.6-flash-free", name: "Ling 2.6 Flash Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "trinity-large-preview-free", name: "Trinity Large Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "hy3-preview-free", name: "Hy3 Preview Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
-          { id: "nemotron-3-super-free", name: "Nemotron 3 Super Free", endpoint: "https://opencode.ai/zen/v1/chat/completions" },
         ],
       },
       {
@@ -94,7 +90,7 @@ const providerOptions: ProviderOption[] = [
           { id: "glm-5.2", name: "GLM-5.2", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
           { id: "glm-5.1", name: "GLM-5.1", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
           // Kimi 系列（/zen/go/v1/chat/completions）
-          { id: "kimi-k2.7", name: "Kimi K2.7", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
+          { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
           { id: "kimi-k2.6", name: "Kimi K2.6", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
           // DeepSeek 系列（/zen/go/v1/chat/completions）
           { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", endpoint: "https://opencode.ai/zen/go/v1/chat/completions" },
@@ -134,7 +130,6 @@ const providerOptions: ProviderOption[] = [
           { id: "claude-opus-4-7", name: "Claude Opus 4.7", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-opus-4-6", name: "Claude Opus 4.6", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-opus-4-5", name: "Claude Opus 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
-          { id: "claude-opus-4-1", name: "Claude Opus 4.1", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
           { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", endpoint: "https://opencode.ai/zen/v1/messages" },
@@ -184,7 +179,7 @@ const providerOptions: ProviderOption[] = [
 ];
 
 const defaultPrompt = "你现在是一个直播间助理，你会收到粉丝牌+用户名+弹幕内容，请逐条回复，单条回复不超过40字。";
-const defaultModelId = "minimax-m2.5-free";
+const defaultModelId = "mimo-v2.5-free";
 const defaultModelEndpoint = "https://opencode.ai/zen/v1/chat/completions";
 
 const form = reactive<AIModelForm>({
@@ -357,18 +352,14 @@ const remoteOpenCodeTierOverrides: Record<string, Exclude<OpenCodeTier, "unknown
  * 不在该列表中的模型即便名字带 free，也不会归入免费分组。
  */
 const ALLOWED_FREE_MODEL_IDS = new Set<string>([
-  // 最新限时免费模型
-  "deepseek-v4-flash-free",
+  // 免费模型（2026-08 按 /zen/v1/models 远端实测校准）
   "mimo-v2.5-free",
-  "north-mini-code-free",
   "nemotron-3-ultra-free",
+  "nemotron-3.5-lightning-free",
+  "hy3-free",
+  "laguna-s-2.1-free",
+  "x-preview-f-free",
   "big-pickle",
-  // 既有免费模型（未弃用，保留）
-  "minimax-m2.5-free",
-  "ling-2.6-flash-free",
-  "trinity-large-preview-free",
-  "hy3-preview-free",
-  "nemotron-3-super-free",
 ]);
 
 /**
@@ -379,6 +370,7 @@ const ALLOWED_FREE_MODEL_IDS = new Set<string>([
  * 弃用日期标注于注释，便于后续清理。
  */
 const DEPRECATED_MODEL_IDS = new Set<string>([
+  "deepseek-v4-flash-free", // 2026-08-24（免费模型已下线，远端列表滞后仍返回）
   "gpt-5.2-codex", // 2026-07-23
   "gpt-5.1-codex", // 2026-07-23
   "gpt-5.1-codex-max", // 2026-07-23
